@@ -8,38 +8,76 @@ const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
-require("dotenv").config();
+const fs = require("fs");
 const pool = require("./db");
 
 const app = express();
 
 /* ================= CONFIG ================= */
 
-const cors = require("cors");
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || "postfan_secret_dev";
+const FRONTEND_URL =
+  process.env.FRONTEND_URL || "https://postfan-novo.netlify.app";
 
-const cors = require("cors");
+const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175",
+  "http://localhost:5176",
+  "http://localhost:5177",
+  "https://postfan-novo.netlify.app",
+];
+
+if (process.env.FRONTEND_URL) {
+  allowedOrigins.push(process.env.FRONTEND_URL);
+}
 
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "http://localhost:5175",
-      "http://localhost:5176",
-      "https://postfan-novo.netlify.app",
-    ],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Origem não permitida pelo CORS"));
+      }
+    },
     credentials: true,
   }),
 );
-app.use(express.json());
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || "postfan_secret_dev";
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+/* ================= UPLOADS ================= */
+
+const uploadsDir = path.join(__dirname, "uploads");
+
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
+
+app.use("/uploads", express.static(uploadsDir));
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir);
+  },
+
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const nomeArquivo =
+      Date.now() + "-" + Math.round(Math.random() * 1e9) + ext;
+
+    cb(null, nomeArquivo);
+  },
+});
+
+const upload = multer({ storage });
 
 /* ================= BANCO ================= */
-
-const pool = require("./db");
 
 pool
   .connect()
@@ -55,82 +93,107 @@ pool
 /* ================= CRIAR TABELAS ================= */
 
 async function criarTabelas() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS usuarios (
-      id SERIAL PRIMARY KEY,
-      nome VARCHAR(150) NOT NULL,
-      email VARCHAR(150) UNIQUE NOT NULL,
-      senha TEXT NOT NULL,
-      foto TEXT,
-      bio TEXT,
-      token_recuperacao TEXT,
-      token_expira TIMESTAMP,
-      criado_em TIMESTAMP DEFAULT NOW()
-    );
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS usuarios (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(150) NOT NULL,
+        email VARCHAR(150) UNIQUE NOT NULL,
+        senha TEXT NOT NULL,
+        foto TEXT,
+        bio TEXT,
+        essencia_representa TEXT,
+        essencia_tema TEXT,
+        essencia_frase TEXT,
+        aberto_para TEXT,
+        token_recuperacao TEXT,
+        token_expira TIMESTAMP,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
 
-    CREATE TABLE IF NOT EXISTS posts (
-      id SERIAL PRIMARY KEY,
-      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-      conteudo TEXT,
-      tema VARCHAR(100),
-      sentimento VARCHAR(100),
-      imagem TEXT,
-      criado_em TIMESTAMP DEFAULT NOW(),
-      atualizado_em TIMESTAMP DEFAULT NOW()
-    );
+      CREATE TABLE IF NOT EXISTS posts (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        conteudo TEXT,
+        tema VARCHAR(100),
+        sentimento VARCHAR(100),
+        imagem TEXT,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW()
+      );
 
-    CREATE TABLE IF NOT EXISTS curtidas (
-      id SERIAL PRIMARY KEY,
-      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-      post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-      criado_em TIMESTAMP DEFAULT NOW(),
-      UNIQUE(usuario_id, post_id)
-    );
+      CREATE TABLE IF NOT EXISTS curtidas (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        UNIQUE(usuario_id, post_id)
+      );
 
-    CREATE TABLE IF NOT EXISTS comentarios (
-      id SERIAL PRIMARY KEY,
-      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-      post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-      conteudo TEXT NOT NULL,
-      criado_em TIMESTAMP DEFAULT NOW()
-    );
+      CREATE TABLE IF NOT EXISTS comentarios (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+        conteudo TEXT NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
 
-    CREATE TABLE IF NOT EXISTS seguidores (
-      id SERIAL PRIMARY KEY,
-      seguidor_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-      seguindo_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-      criado_em TIMESTAMP DEFAULT NOW(),
-      UNIQUE(seguidor_id, seguindo_id)
-    );
+      CREATE TABLE IF NOT EXISTS seguidores (
+        id SERIAL PRIMARY KEY,
+        seguidor_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        seguindo_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        criado_em TIMESTAMP DEFAULT NOW(),
+        UNIQUE(seguidor_id, seguindo_id)
+      );
 
-    CREATE TABLE IF NOT EXISTS compartilhamentos (
-      id SERIAL PRIMARY KEY,
-      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-      post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-      criado_em TIMESTAMP DEFAULT NOW()
-    );
-  `);
+      CREATE TABLE IF NOT EXISTS compartilhamentos (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
 
-  console.log("✅ Tabelas verificadas/criadas com sucesso!");
+      CREATE TABLE IF NOT EXISTS grupos (
+        id SERIAL PRIMARY KEY,
+        dono_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        nome VARCHAR(150) NOT NULL,
+        descricao TEXT NOT NULL,
+        categoria VARCHAR(100) DEFAULT 'Geral',
+        codigo_convite VARCHAR(20) UNIQUE NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS grupo_membros (
+        id SERIAL PRIMARY KEY,
+        grupo_id INTEGER REFERENCES grupos(id) ON DELETE CASCADE,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        papel VARCHAR(50) DEFAULT 'membro',
+        criado_em TIMESTAMP DEFAULT NOW(),
+        UNIQUE(grupo_id, usuario_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS grupo_mensagens (
+        id SERIAL PRIMARY KEY,
+        grupo_id INTEGER REFERENCES grupos(id) ON DELETE CASCADE,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        mensagem TEXT NOT NULL,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    console.log("✅ Tabelas verificadas/criadas com sucesso!");
+  } catch (error) {
+    console.error("❌ Erro ao criar tabelas:", error.message);
+  }
 }
 
 criarTabelas();
 
-/* ================= UPLOAD ================= */
+/* ================= FUNÇÕES ================= */
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
-  },
-});
-
-const upload = multer({ storage });
-
-/* ================= MIDDLEWARE TOKEN ================= */
+function gerarCodigoGrupo() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
 
 function autenticar(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -157,7 +220,10 @@ function autenticar(req, res, next) {
 /* ================= TESTE ================= */
 
 app.get("/", (req, res) => {
-  res.send("Servidor Postfan rodando!");
+  res.json({
+    mensagem: "Servidor Postfan rodando!",
+    status: "online",
+  });
 });
 
 /* ================= CADASTRO ================= */
@@ -188,16 +254,22 @@ app.post("/cadastro", async (req, res) => {
     const senhaHash = await bcrypt.hash(senha, 10);
 
     const novo = await pool.query(
-      `INSERT INTO usuarios (nome, email, senha)
-       VALUES ($1, $2, $3)
-       RETURNING id, nome, email, foto, bio, criado_em`,
+      `
+      INSERT INTO usuarios (nome, email, senha)
+      VALUES ($1, $2, $3)
+      RETURNING id, nome, email, foto, bio, criado_em
+      `,
       [nome, email, senhaHash],
     );
 
     const usuario = novo.rows[0];
 
     const token = jwt.sign(
-      { id: usuario.id, nome: usuario.nome, email: usuario.email },
+      {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+      },
       JWT_SECRET,
       { expiresIn: "7d" },
     );
@@ -233,6 +305,7 @@ app.post("/login", async (req, res) => {
     }
 
     const usuario = resultado.rows[0];
+
     const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
 
     if (!senhaCorreta) {
@@ -240,7 +313,11 @@ app.post("/login", async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: usuario.id, nome: usuario.nome, email: usuario.email },
+      {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+      },
       JWT_SECRET,
       { expiresIn: "7d" },
     );
@@ -254,6 +331,10 @@ app.post("/login", async (req, res) => {
         email: usuario.email,
         foto: usuario.foto,
         bio: usuario.bio,
+        essencia_representa: usuario.essencia_representa,
+        essencia_tema: usuario.essencia_tema,
+        essencia_frase: usuario.essencia_frase,
+        aberto_para: usuario.aberto_para,
       },
     });
   } catch (error) {
@@ -282,17 +363,19 @@ app.post("/recuperar", async (req, res) => {
     }
 
     const token = uuidv4();
+
     const expira = new Date();
     expira.setHours(expira.getHours() + 1);
 
     await pool.query(
-      `UPDATE usuarios
-       SET token_recuperacao = $1, token_expira = $2
-       WHERE email = $3`,
+      `
+      UPDATE usuarios
+      SET token_recuperacao = $1, token_expira = $2
+      WHERE email = $3
+      `,
       [token, expira, email],
     );
 
-    const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
     const link = `${FRONTEND_URL}/resetar-senha?token=${token}`;
 
     const transporter = nodemailer.createTransport({
@@ -326,14 +409,16 @@ app.post("/recuperar", async (req, res) => {
   }
 });
 
+/* ================= RESETAR SENHA ================= */
+
 app.post("/resetar", async (req, res) => {
   try {
     const { token, novaSenha } = req.body;
 
     if (!token || !novaSenha) {
-      return res
-        .status(400)
-        .json({ erro: "Token e nova senha são obrigatórios." });
+      return res.status(400).json({
+        erro: "Token e nova senha são obrigatórios.",
+      });
     }
 
     if (novaSenha.length < 6) {
@@ -354,17 +439,19 @@ app.post("/resetar", async (req, res) => {
     const usuario = resultado.rows[0];
 
     if (usuario.token_expira && new Date() > usuario.token_expira) {
-      return res
-        .status(400)
-        .json({ erro: "Token expirado. Solicite outro link." });
+      return res.status(400).json({
+        erro: "Token expirado. Solicite outro link.",
+      });
     }
 
     const senhaHash = await bcrypt.hash(novaSenha, 10);
 
     await pool.query(
-      `UPDATE usuarios
-       SET senha = $1, token_recuperacao = NULL, token_expira = NULL
-       WHERE id = $2`,
+      `
+      UPDATE usuarios
+      SET senha = $1, token_recuperacao = NULL, token_expira = NULL
+      WHERE id = $2
+      `,
       [senhaHash, usuario.id],
     );
 
@@ -380,11 +467,22 @@ app.post("/resetar", async (req, res) => {
 app.get("/me", autenticar, async (req, res) => {
   try {
     const usuario = await pool.query(
-      `SELECT id, nome, email, foto, bio, criado_em
-       FROM usuarios
-       WHERE id = $1`,
+      `
+      SELECT 
+        id, nome, email, foto, bio, criado_em,
+        essencia_representa,
+        essencia_tema,
+        essencia_frase,
+        aberto_para
+      FROM usuarios
+      WHERE id = $1
+      `,
       [req.usuario.id],
     );
+
+    if (usuario.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
 
     res.json(usuario.rows[0]);
   } catch (error) {
@@ -408,7 +506,7 @@ app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
     let fotoUrl = null;
 
     if (req.file) {
-      fotoUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+      fotoUrl = `${BACKEND_URL}/uploads/${req.file.filename}`;
     }
 
     const atual = await pool.query("SELECT * FROM usuarios WHERE id = $1", [
@@ -457,7 +555,7 @@ app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
       usuario: resultado.rows[0],
     });
   } catch (error) {
-    console.error("Erro ao editar perfil:", error.message);
+    console.error("❌ Erro ao editar perfil:", error.message);
     res.status(500).json({ erro: "Erro ao editar perfil." });
   }
 });
@@ -470,7 +568,7 @@ app.post("/upload", autenticar, upload.single("imagem"), (req, res) => {
   }
 
   res.json({
-    url: `http://localhost:${PORT}/uploads/${req.file.filename}`,
+    url: `${BACKEND_URL}/uploads/${req.file.filename}`,
   });
 });
 
@@ -483,7 +581,7 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
     let imagem = null;
 
     if (req.file) {
-      imagem = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+      imagem = `${BACKEND_URL}/uploads/${req.file.filename}`;
     }
 
     if (!conteudo && !imagem) {
@@ -528,6 +626,7 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
     res.status(500).json({ erro: "Erro ao criar post." });
   }
 });
+
 /* ================= LISTAR POSTS ================= */
 
 app.get("/posts", autenticar, async (req, res) => {
@@ -578,15 +677,17 @@ app.put("/posts/:id", autenticar, async (req, res) => {
       return res.status(404).json({ erro: "Post não encontrado." });
     }
 
-    if (post.rows[0].usuario_id !== req.usuario.id) {
+    if (Number(post.rows[0].usuario_id) !== Number(req.usuario.id)) {
       return res.status(403).json({ erro: "Você não pode editar este post." });
     }
 
     const atualizado = await pool.query(
-      `UPDATE posts
-       SET conteudo = $1, tema = $2, sentimento = $3, atualizado_em = NOW()
-       WHERE id = $4
-       RETURNING *`,
+      `
+      UPDATE posts
+      SET conteudo = $1, tema = $2, sentimento = $3, atualizado_em = NOW()
+      WHERE id = $4
+      RETURNING *
+      `,
       [conteudo, tema, sentimento, id],
     );
 
@@ -612,7 +713,7 @@ app.delete("/posts/:id", autenticar, async (req, res) => {
       return res.status(404).json({ erro: "Post não encontrado." });
     }
 
-    if (post.rows[0].usuario_id !== req.usuario.id) {
+    if (Number(post.rows[0].usuario_id) !== Number(req.usuario.id)) {
       return res.status(403).json({ erro: "Você não pode excluir este post." });
     }
 
@@ -636,13 +737,19 @@ app.post("/curtir", autenticar, async (req, res) => {
     }
 
     const existe = await pool.query(
-      "SELECT * FROM curtidas WHERE usuario_id = $1 AND post_id = $2",
+      `
+      SELECT * FROM curtidas 
+      WHERE usuario_id = $1 AND post_id = $2
+      `,
       [req.usuario.id, post_id],
     );
 
     if (existe.rows.length > 0) {
       await pool.query(
-        "DELETE FROM curtidas WHERE usuario_id = $1 AND post_id = $2",
+        `
+        DELETE FROM curtidas 
+        WHERE usuario_id = $1 AND post_id = $2
+        `,
         [req.usuario.id, post_id],
       );
 
@@ -650,7 +757,10 @@ app.post("/curtir", autenticar, async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO curtidas (usuario_id, post_id) VALUES ($1, $2)",
+      `
+      INSERT INTO curtidas (usuario_id, post_id)
+      VALUES ($1, $2)
+      `,
       [req.usuario.id, post_id],
     );
 
@@ -666,6 +776,10 @@ app.post("/curtir", autenticar, async (req, res) => {
 app.get("/comentarios", autenticar, async (req, res) => {
   try {
     const { post_id } = req.query;
+
+    if (!post_id) {
+      return res.status(400).json({ erro: "post_id é obrigatório." });
+    }
 
     const comentarios = await pool.query(
       `
@@ -693,9 +807,9 @@ app.post("/comentarios", autenticar, async (req, res) => {
     const { post_id, conteudo } = req.body;
 
     if (!post_id || !conteudo) {
-      return res
-        .status(400)
-        .json({ erro: "post_id e conteudo são obrigatórios." });
+      return res.status(400).json({
+        erro: "post_id e conteudo são obrigatórios.",
+      });
     }
 
     const novo = await pool.query(
@@ -707,9 +821,22 @@ app.post("/comentarios", autenticar, async (req, res) => {
       [req.usuario.id, post_id, conteudo],
     );
 
+    const comentarioCompleto = await pool.query(
+      `
+      SELECT 
+        cm.*,
+        u.nome,
+        u.foto
+      FROM comentarios cm
+      JOIN usuarios u ON u.id = cm.usuario_id
+      WHERE cm.id = $1
+      `,
+      [novo.rows[0].id],
+    );
+
     res.status(201).json({
       mensagem: "Comentário criado com sucesso!",
-      comentario: novo.rows[0],
+      comentario: comentarioCompleto.rows[0],
     });
   } catch (error) {
     console.error("❌ Erro ao comentar:", error.message);
@@ -728,7 +855,10 @@ app.post("/compartilhar", autenticar, async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO compartilhamentos (usuario_id, post_id) VALUES ($1, $2)",
+      `
+      INSERT INTO compartilhamentos (usuario_id, post_id)
+      VALUES ($1, $2)
+      `,
       [req.usuario.id, post_id],
     );
 
@@ -751,14 +881,12 @@ app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
         u.email,
         u.foto,
         u.bio,
-
         EXISTS (
           SELECT 1
           FROM seguidores s
           WHERE s.seguidor_id = $1
           AND s.seguindo_id = u.id
         ) AS seguindo
-
       FROM usuarios u
       WHERE u.id != $1
       ORDER BY u.id DESC
@@ -768,7 +896,7 @@ app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
 
     res.json(sugestoes.rows);
   } catch (error) {
-    console.error("Erro ao buscar sugestões:", error);
+    console.error("❌ Erro ao buscar sugestões:", error.message);
 
     res.status(500).json({
       erro: "Erro ao buscar sugestões.",
@@ -777,7 +905,7 @@ app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
   }
 });
 
-/* ================= SEGUIR / DEIXAR DE SEGUIR ================= */
+/* ================= BUSCAR USUÁRIO ================= */
 
 app.get("/usuarios/:id", autenticar, async (req, res) => {
   try {
@@ -848,26 +976,32 @@ app.get("/usuarios/:id/posts", autenticar, async (req, res) => {
         u.email,
         u.foto,
         COALESCE((SELECT COUNT(*) FROM curtidas WHERE post_id = p.id), 0) AS total_curtidas,
-        COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios
+        COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios,
+        COALESCE((SELECT COUNT(*) FROM compartilhamentos WHERE post_id = p.id), 0) AS total_compartilhamentos,
+        EXISTS (
+          SELECT 1 FROM curtidas 
+          WHERE curtidas.post_id = p.id 
+          AND curtidas.usuario_id = $2
+        ) AS curtiu
       FROM posts p
       JOIN usuarios u ON u.id = p.usuario_id
       WHERE p.usuario_id = $1
       ORDER BY p.criado_em DESC
       `,
-      [usuarioId],
+      [usuarioId, req.usuario.id],
     );
 
     res.json(posts.rows);
   } catch (error) {
-    console.error("Erro ao buscar posts do perfil:", error.message);
+    console.error("❌ Erro ao buscar posts do perfil:", error.message);
     res.status(500).json({ erro: "Erro ao buscar posts." });
   }
 });
 
-/* ================= SEGUIR USUÁRIO ================= */
+/* ================= SEGUIR / DEIXAR DE SEGUIR ================= */
 
 app.post("/seguir/:id", autenticar, async (req, res) => {
-  const seguidor_id = req.usuario.id;
+  const seguidor_id = Number(req.usuario.id);
   const seguindo_id = Number(req.params.id);
 
   try {
@@ -877,7 +1011,15 @@ app.post("/seguir/:id", autenticar, async (req, res) => {
       });
     }
 
-    // verifica se já segue
+    const usuarioExiste = await pool.query(
+      "SELECT id FROM usuarios WHERE id = $1",
+      [seguindo_id],
+    );
+
+    if (usuarioExiste.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
     const existe = await pool.query(
       `
       SELECT * FROM seguidores
@@ -887,7 +1029,6 @@ app.post("/seguir/:id", autenticar, async (req, res) => {
       [seguidor_id, seguindo_id],
     );
 
-    // se já segue -> deixa de seguir
     if (existe.rows.length > 0) {
       await pool.query(
         `
@@ -899,25 +1040,25 @@ app.post("/seguir/:id", autenticar, async (req, res) => {
       );
 
       return res.json({
+        mensagem: "Você deixou de seguir este usuário.",
         seguindo: false,
       });
     }
 
-    // seguir
     await pool.query(
       `
-      INSERT INTO seguidores
-      (seguidor_id, seguindo_id)
+      INSERT INTO seguidores (seguidor_id, seguindo_id)
       VALUES ($1, $2)
       `,
       [seguidor_id, seguindo_id],
     );
 
     res.json({
+      mensagem: "Você começou a seguir este usuário.",
       seguindo: true,
     });
   } catch (error) {
-    console.error("Erro ao seguir:", error);
+    console.error("❌ Erro ao seguir:", error.message);
 
     res.status(500).json({
       erro: "Erro interno ao seguir usuário.",
@@ -932,12 +1073,26 @@ app.post("/api/grupos", autenticar, async (req, res) => {
     const { nome, descricao, categoria } = req.body;
 
     if (!nome || !descricao) {
-      return res
-        .status(400)
-        .json({ erro: "Nome e descrição são obrigatórios." });
+      return res.status(400).json({
+        erro: "Nome e descrição são obrigatórios.",
+      });
     }
 
     let codigo = gerarCodigoGrupo();
+
+    let codigoExiste = await pool.query(
+      "SELECT id FROM grupos WHERE codigo_convite = $1",
+      [codigo],
+    );
+
+    while (codigoExiste.rows.length > 0) {
+      codigo = gerarCodigoGrupo();
+
+      codigoExiste = await pool.query(
+        "SELECT id FROM grupos WHERE codigo_convite = $1",
+        [codigo],
+      );
+    }
 
     const grupo = await pool.query(
       `
@@ -963,7 +1118,7 @@ app.post("/api/grupos", autenticar, async (req, res) => {
       grupo: novoGrupo,
     });
   } catch (error) {
-    console.error("Erro ao criar grupo:", error.message);
+    console.error("❌ Erro ao criar grupo:", error.message);
     res.status(500).json({ erro: "Erro ao criar grupo." });
   }
 });
@@ -992,7 +1147,7 @@ app.get("/api/meus-grupos", autenticar, async (req, res) => {
 
     res.json(grupos.rows);
   } catch (error) {
-    console.error("Erro ao buscar meus grupos:", error.message);
+    console.error("❌ Erro ao buscar meus grupos:", error.message);
     res.status(500).json({ erro: "Erro ao buscar grupos." });
   }
 });
@@ -1001,13 +1156,13 @@ app.get("/api/meus-grupos", autenticar, async (req, res) => {
 
 app.get("/api/grupos", autenticar, async (req, res) => {
   try {
-    const grupos = await pool.query(
-      `
+    const grupos = await pool.query(`
       SELECT 
         g.id,
         g.nome,
         g.descricao,
         g.categoria,
+        g.codigo_convite,
         g.criado_em,
         u.nome AS dono_nome,
         COUNT(gm.id) AS total_membros
@@ -1016,12 +1171,11 @@ app.get("/api/grupos", autenticar, async (req, res) => {
       LEFT JOIN grupo_membros gm ON gm.grupo_id = g.id
       GROUP BY g.id, u.nome
       ORDER BY g.criado_em DESC
-      `,
-    );
+    `);
 
     res.json(grupos.rows);
   } catch (error) {
-    console.error("Erro ao explorar grupos:", error.message);
+    console.error("❌ Erro ao explorar grupos:", error.message);
     res.status(500).json({ erro: "Erro ao buscar grupos." });
   }
 });
@@ -1075,7 +1229,7 @@ app.post("/api/grupos/entrar", autenticar, async (req, res) => {
       grupo: grupo.rows[0],
     });
   } catch (error) {
-    console.error("Erro ao entrar no grupo:", error.message);
+    console.error("❌ Erro ao entrar no grupo:", error.message);
     res.status(500).json({ erro: "Erro ao entrar no grupo." });
   }
 });
@@ -1101,9 +1255,9 @@ app.get("/api/grupos/:id", autenticar, async (req, res) => {
     );
 
     if (grupo.rows.length === 0) {
-      return res
-        .status(403)
-        .json({ erro: "Você não tem acesso a esse grupo." });
+      return res.status(403).json({
+        erro: "Você não tem acesso a esse grupo.",
+      });
     }
 
     res.json(grupo.rows[0]);
@@ -1117,6 +1271,20 @@ app.get("/api/grupos/:id", autenticar, async (req, res) => {
 app.get("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
   try {
     const { id } = req.params;
+
+    const membro = await pool.query(
+      `
+      SELECT * FROM grupo_membros
+      WHERE grupo_id = $1 AND usuario_id = $2
+      `,
+      [id, req.usuario.id],
+    );
+
+    if (membro.rows.length === 0) {
+      return res.status(403).json({
+        erro: "Você não participa desse grupo.",
+      });
+    }
 
     const mensagens = await pool.query(
       `
@@ -1158,7 +1326,9 @@ app.post("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
     );
 
     if (membro.rows.length === 0) {
-      return res.status(403).json({ erro: "Você não participa desse grupo." });
+      return res.status(403).json({
+        erro: "Você não participa desse grupo.",
+      });
     }
 
     const nova = await pool.query(
@@ -1178,6 +1348,8 @@ app.post("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
     res.status(500).json({ erro: "Erro ao enviar mensagem." });
   }
 });
+
+/* ================= EXCLUIR GRUPO ================= */
 
 app.delete("/api/grupos/:id", autenticar, async (req, res) => {
   try {
@@ -1199,7 +1371,7 @@ app.delete("/api/grupos/:id", autenticar, async (req, res) => {
 
     res.json({ mensagem: "Grupo excluído com sucesso!" });
   } catch (error) {
-    console.error("Erro ao excluir grupo:", error.message);
+    console.error("❌ Erro ao excluir grupo:", error.message);
     res.status(500).json({ erro: "Erro ao excluir grupo." });
   }
 });

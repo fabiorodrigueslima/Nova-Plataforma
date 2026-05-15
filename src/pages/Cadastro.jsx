@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaImage, FaEye, FaEyeSlash } from "react-icons/fa";
-import Imagem3 from "../assets/Img/imagem3.png";
+import imagem3 from "../assets/img/imagem3.png";
 import "../styles/style.css";
 
 export default function Cadastro() {
@@ -114,7 +114,7 @@ export default function Cadastro() {
                 </div>
 
                 <div className="auth-image-wrapper">
-                    <img src={Imagem3} alt="Postfan" className="auth-image" />
+                    <img src={imagem3} alt="Postfan" className="auth-image" />
 
                     <div className="auth-overlay"></div>
 

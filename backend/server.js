@@ -17,6 +17,7 @@ const app = express();
 
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "postfan_secret_dev";
+
 const FRONTEND_URL =
   process.env.FRONTEND_URL || "https://postfan-novo.netlify.app";
 
@@ -29,32 +30,28 @@ const allowedOrigins = [
   "http://localhost:5176",
   "http://localhost:5177",
   "https://postfan-novo.netlify.app",
+  "https://5a06890e--postfan-novo.netlify.app",
 ];
 
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "http://localhost:5176",
-  "http://localhost:5177",
-  "https://postfan-novo.netlify.app",
-  "https://5a06890e--postfan-novo.netlify.app",
-];
-
 app.use(
   cors({
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
 
-      if (allowedOrigins.includes(origin) || origin.endsWith(".netlify.app")) {
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.includes("postfan-novo.netlify.app") ||
+        origin.endsWith(".netlify.app")
+      ) {
         return callback(null, true);
       }
 
-      return callback(new Error("Origem não permitida pelo CORS"));
+      console.log("❌ Origem bloqueada pelo CORS:", origin);
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -62,7 +59,13 @@ app.use(
   }),
 );
 
-app.options("*", cors());
+app.options(
+  "*",
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

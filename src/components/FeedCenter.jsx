@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import api from "../services/api";
 import "../styles/style.css";
 
 export default function FeedCenter({
@@ -19,10 +20,27 @@ export default function FeedCenter({
     const [novoComentario, setNovoComentario] = useState({});
     const [editandoId, setEditandoId] = useState(null);
     const [textoEditado, setTextoEditado] = useState("");
+    const [loadingPosts, setLoadingPosts] = useState(true);
+    const [publicando, setPublicando] = useState(false);
+
+    async function carregarPosts() {
+        try {
+            setLoadingPosts(true);
+
+            const res = await api.get("/posts");
+            const data = res.data;
+
+            setPosts(Array.isArray(data) ? data : []);
+        } catch (error) {
+            console.error("Erro ao carregar posts:", error);
+        } finally {
+            setLoadingPosts(false);
+        }
+    }
 
     useEffect(() => {
-        localStorage.setItem("postsPostfan", JSON.stringify(posts));
-    }, [posts]);
+        carregarPosts();
+    }, []);
 
     function selecionarArquivo(e) {
         const file = e.target.files[0];
@@ -42,100 +60,179 @@ export default function FeedCenter({
         setTipoArquivo("");
     }
 
-    function publicar() {
+    async function publicar() {
         if (!texto.trim() && !arquivo) {
             alert("Escreva algo ou escolha uma foto/vídeo/documento.");
             return;
         }
 
-        const novoPost = {
-            id: Date.now(),
-            texto: texto.trim(),
-            tema,
-            sentimento,
-            autor: usuario?.nome || usuario?.nome_completo || "Usuário",
-            fotoAutor: usuario?.foto || "",
-            arquivoNome: arquivo?.name || "",
-            arquivoUrl: preview || "",
-            tipoArquivo,
-            likes: 0,
-            curtiu: false,
-            comentarios: [],
-            criadoEm: new Date().toLocaleString("pt-BR"),
-            usuarioId: usuario?.id || null,
-        };
+        try {
+            setPublicando(true);
 
-        setPosts([novoPost, ...posts]);
+            const formData = new FormData();
 
-        setTexto("");
-        setTema("Geral");
-        setSentimento("");
-        removerArquivo();
+            formData.append("conteudo", texto.trim());
+            formData.append("tema", tema);
+            formData.append("sentimento", sentimento);
+
+            if (arquivo) {
+                formData.append("arquivo", arquivo);
+            }
+
+            const res = await api.post("/posts", formData);
+
+            const novoPost = res.data.post || res.data;
+
+            setPosts((prev) => [novoPost, ...prev]);
+
+            setTexto("");
+            setTema("Geral");
+            setSentimento("");
+            removerArquivo();
+        } catch (error) {
+            console.error("Erro ao publicar:", error);
+
+            alert(
+                error.response?.data?.erro ||
+                "Erro ao publicar post."
+            );
+        } finally {
+            setPublicando(false);
+        }
     }
 
-    function curtirPost(id) {
-        setPosts(
-            posts.map((post) =>
-                post.id === id
-                    ? {
-                        ...post,
-                        curtiu: !post.curtiu,
-                        likes: post.curtiu ? post.likes - 1 : post.likes + 1,
-                    }
-                    : post
-            )
-        );
+    async function curtirPost(id) {
+        try {
+            const res = await api.post(`/posts/${id}/curtir`);
+            const data = res.data;
+
+            setPosts((prev) =>
+                prev.map((post) =>
+                    post.id === id
+                        ? {
+                            ...post,
+                            curtiu: data.curtiu,
+                            total_curtidas: data.total_curtidas,
+                        }
+                        : post
+                )
+            );
+        } catch (error) {
+            console.error("Erro ao curtir post:", error);
+
+            alert(
+                error.response?.data?.erro ||
+                "Erro ao curtir post."
+            );
+        }
     }
 
-    function excluirPost(id) {
+    async function excluirPost(id) {
         if (!window.confirm("Deseja excluir este post?")) return;
-        setPosts(posts.filter((post) => post.id !== id));
+
+        try {
+            await api.delete(`/posts/${id}`);
+
+            setPosts((prev) => prev.filter((post) => post.id !== id));
+        } catch (error) {
+            console.error("Erro ao excluir post:", error);
+
+            alert(
+                error.response?.data?.erro ||
+                "Erro ao excluir post."
+            );
+        }
     }
 
     function iniciarEdicao(post) {
         setEditandoId(post.id);
-        setTextoEditado(post.texto || "");
+        setTextoEditado(post.conteudo || post.texto || "");
     }
 
-    function salvarEdicao(id) {
-        setPosts(
-            posts.map((post) =>
-                post.id === id ? { ...post, texto: textoEditado.trim() } : post
-            )
-        );
+    async function salvarEdicao(id) {
+        if (!textoEditado.trim()) {
+            alert("O texto não pode ficar vazio.");
+            return;
+        }
 
-        setEditandoId(null);
-        setTextoEditado("");
+        try {
+            const res = await api.put(`/posts/${id}`, {
+                conteudo: textoEditado.trim(),
+            });
+
+            const postAtualizado = res.data.post || res.data;
+
+            setPosts((prev) =>
+                prev.map((post) =>
+                    post.id === id
+                        ? {
+                            ...post,
+                            ...postAtualizado,
+                            conteudo: postAtualizado.conteudo || textoEditado.trim(),
+                        }
+                        : post
+                )
+            );
+
+            setEditandoId(null);
+            setTextoEditado("");
+        } catch (error) {
+            console.error("Erro ao editar post:", error);
+
+            alert(
+                error.response?.data?.erro ||
+                "Erro ao editar post."
+            );
+        }
     }
 
-    function comentar(id) {
+    async function comentar(id) {
         const textoComentario = novoComentario[id];
 
         if (!textoComentario?.trim()) return;
 
-        const comentario = {
-            id: Date.now(),
-            autor: usuario?.nome || usuario?.nome_completo || "Usuário",
-            texto: textoComentario.trim(),
-            criadoEm: "Agora mesmo",
-        };
+        try {
+            const res = await api.post(`/posts/${id}/comentarios`, {
+                conteudo: textoComentario.trim(),
+            });
 
-        setPosts(
-            posts.map((post) =>
-                post.id === id
-                    ? {
-                        ...post,
-                        comentarios: [...(post.comentarios || []), comentario],
-                    }
-                    : post
-            )
-        );
+            const comentario = res.data.comentario || res.data;
 
-        setNovoComentario({ ...novoComentario, [id]: "" });
+            setPosts((prev) =>
+                prev.map((post) =>
+                    post.id === id
+                        ? {
+                            ...post,
+                            comentarios: [
+                                ...(post.comentarios || []),
+                                comentario,
+                            ],
+                            total_comentarios:
+                                Number(post.total_comentarios || 0) + 1,
+                        }
+                        : post
+                )
+            );
+
+            setNovoComentario({
+                ...novoComentario,
+                [id]: "",
+            });
+        } catch (error) {
+            console.error("Erro ao comentar:", error);
+
+            alert(
+                error.response?.data?.erro ||
+                "Erro ao comentar."
+            );
+        }
     }
 
     function compartilhar(post) {
-        const textoCompartilhar = `${post.autor} postou no PostFan:\n\n${post.texto}`;
+        const textoPost = post.conteudo || post.texto || "";
+        const autor = post.autor || post.nome || "Usuário";
+
+        const textoCompartilhar = `${autor} postou no PostFan:\n\n${textoPost}`;
 
         if (navigator.share) {
             navigator.share({
@@ -174,9 +271,13 @@ export default function FeedCenter({
 
                 {preview && (
                     <div className="preview-box">
-                        {tipoArquivo === "imagem" && <img src={preview} alt="Preview" />}
+                        {tipoArquivo === "imagem" && (
+                            <img src={preview} alt="Preview" />
+                        )}
 
-                        {tipoArquivo === "video" && <video src={preview} controls />}
+                        {tipoArquivo === "video" && (
+                            <video src={preview} controls />
+                        )}
 
                         {tipoArquivo === "documento" && (
                             <div className="document-preview">
@@ -193,12 +294,22 @@ export default function FeedCenter({
                 <div className="post-actions">
                     <label className="file-btn">
                         📷 Foto
-                        <input type="file" accept="image/*" onChange={selecionarArquivo} hidden />
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={selecionarArquivo}
+                            hidden
+                        />
                     </label>
 
                     <label className="file-btn">
                         🎥 Vídeo
-                        <input type="file" accept="video/*" onChange={selecionarArquivo} hidden />
+                        <input
+                            type="file"
+                            accept="video/*"
+                            onChange={selecionarArquivo}
+                            hidden
+                        />
                     </label>
 
                     <label className="file-btn">
@@ -211,7 +322,10 @@ export default function FeedCenter({
                         />
                     </label>
 
-                    <select value={sentimento} onChange={(e) => setSentimento(e.target.value)}>
+                    <select
+                        value={sentimento}
+                        onChange={(e) => setSentimento(e.target.value)}
+                    >
                         <option value="">😊 Como está se sentindo?</option>
                         <option value="Feliz">😄 Feliz</option>
                         <option value="Triste">😢 Triste</option>
@@ -239,8 +353,12 @@ export default function FeedCenter({
                         <option>Notícias</option>
                     </select>
 
-                    <button className="publish-btn" onClick={publicar}>
-                        Publicar
+                    <button
+                        className="publish-btn"
+                        onClick={publicar}
+                        disabled={publicando}
+                    >
+                        {publicando ? "Publicando..." : "Publicar"}
                     </button>
                 </div>
             </div>
@@ -250,132 +368,179 @@ export default function FeedCenter({
             </div>
 
             <div className="posts-list">
-                {postsFiltrados.length === 0 ? (
+                {loadingPosts ? (
+                    <div className="empty-feed">
+                        <h3>Carregando posts...</h3>
+                    </div>
+                ) : postsFiltrados.length === 0 ? (
                     <div className="empty-feed">
                         <h3>Nenhum post ainda</h3>
                         <p>Faça sua primeira publicação no PostFan.</p>
                     </div>
                 ) : (
-                    postsFiltrados.map((post) => (
-                        <article className="feed-post" key={post.id}>
-                            <div className="feed-post-top">
-                                <div className="post-avatar">
-                                    {post.fotoAutor ? (
-                                        <img src={post.fotoAutor} alt={post.autor} />
-                                    ) : (
-                                        post.autor?.charAt(0) || "?"
-                                    )}
-                                </div>
+                    postsFiltrados.map((post) => {
+                        const textoPost = post.conteudo || post.texto || "";
+                        const autor = post.autor || post.nome || post.usuario_nome || "Usuário";
+                        const fotoAutor = post.fotoAutor || post.foto || post.usuario_foto || "";
+                        const imagemPost = post.imagem || post.arquivoUrl || "";
+                        const criadoEm = post.criado_em
+                            ? new Date(post.criado_em).toLocaleString("pt-BR")
+                            : post.criadoEm || "";
 
-                                <div>
-                                    <h4>{post.autor}</h4>
-                                    <span>{post.criadoEm}</span>
-                                </div>
+                        const donoPost =
+                            Number(post.usuario_id || post.usuarioId) === Number(usuario?.id);
 
-                                <div className="post-menu">
-                                    <button onClick={() => iniciarEdicao(post)}>✏️</button>
-                                    <button onClick={() => excluirPost(post.id)}>🗑️</button>
-                                </div>
-                            </div>
-
-                            <span className="post-theme">#{post.tema}</span>
-
-                            {post.sentimento && (
-                                <span className="post-feeling">
-                                    Está se sentindo {post.sentimento}
-                                </span>
-                            )}
-
-                            {editandoId === post.id ? (
-                                <div className="edit-box">
-                                    <textarea
-                                        value={textoEditado}
-                                        onChange={(e) => setTextoEditado(e.target.value)}
-                                    />
+                        return (
+                            <article className="feed-post" key={post.id}>
+                                <div className="feed-post-top">
+                                    <div className="post-avatar">
+                                        {fotoAutor ? (
+                                            <img src={fotoAutor} alt={autor} />
+                                        ) : (
+                                            autor?.charAt(0) || "?"
+                                        )}
+                                    </div>
 
                                     <div>
-                                        <button onClick={() => salvarEdicao(post.id)}>Salvar</button>
-                                        <button onClick={() => setEditandoId(null)}>Cancelar</button>
+                                        <h4>{autor}</h4>
+                                        <span>{criadoEm}</span>
                                     </div>
-                                </div>
-                            ) : (
-                                post.texto && <p>{post.texto}</p>
-                            )}
 
-                            {post.arquivoUrl && post.tipoArquivo === "imagem" && (
-                                <img className="post-media" src={post.arquivoUrl} alt="Post" />
-                            )}
+                                    {donoPost && (
+                                        <div className="post-menu">
+                                            <button onClick={() => iniciarEdicao(post)}>
+                                                ✏️
+                                            </button>
 
-                            {post.arquivoUrl && post.tipoArquivo === "video" && (
-                                <video className="post-media" src={post.arquivoUrl} controls />
-                            )}
-
-                            {post.arquivoUrl && post.tipoArquivo === "documento" && (
-                                <a
-                                    className="post-document"
-                                    href={post.arquivoUrl}
-                                    download={post.arquivoNome}
-                                >
-                                    📄 Baixar documento: {post.arquivoNome}
-                                </a>
-                            )}
-
-                            <div className="feed-post-actions">
-                                <button
-                                    className={post.curtiu ? "liked" : ""}
-                                    onClick={() => curtirPost(post.id)}
-                                >
-                                    ❤️ {post.likes}
-                                </button>
-
-                                <button
-                                    onClick={() =>
-                                        setComentarioAberto(
-                                            comentarioAberto === post.id ? null : post.id
-                                        )
-                                    }
-                                >
-                                    💬 {(post.comentarios || []).length}
-                                </button>
-
-                                <button onClick={() => compartilhar(post)}>
-                                    🔗 Compartilhar
-                                </button>
-                            </div>
-
-                            {comentarioAberto === post.id && (
-                                <div className="comments-box">
-                                    {(post.comentarios || []).length === 0 ? (
-                                        <p className="no-comments">Nenhum comentário ainda.</p>
-                                    ) : (
-                                        post.comentarios.map((comentario) => (
-                                            <div className="comment-item" key={comentario.id}>
-                                                <strong>{comentario.autor}</strong>
-                                                <p>{comentario.texto}</p>
-                                                <span>{comentario.criadoEm}</span>
-                                            </div>
-                                        ))
+                                            <button onClick={() => excluirPost(post.id)}>
+                                                🗑️
+                                            </button>
+                                        </div>
                                     )}
+                                </div>
 
-                                    <div className="comment-form">
-                                        <input
-                                            type="text"
-                                            placeholder="Escreva um comentário..."
-                                            value={novoComentario[post.id] || ""}
-                                            onChange={(e) =>
-                                                setNovoComentario({
-                                                    ...novoComentario,
-                                                    [post.id]: e.target.value,
-                                                })
-                                            }
+                                {post.tema && (
+                                    <span className="post-theme">#{post.tema}</span>
+                                )}
+
+                                {post.sentimento && (
+                                    <span className="post-feeling">
+                                        Está se sentindo {post.sentimento}
+                                    </span>
+                                )}
+
+                                {editandoId === post.id ? (
+                                    <div className="edit-box">
+                                        <textarea
+                                            value={textoEditado}
+                                            onChange={(e) => setTextoEditado(e.target.value)}
                                         />
 
-                                        <button onClick={() => comentar(post.id)}>Enviar</button>
+                                        <div>
+                                            <button onClick={() => salvarEdicao(post.id)}>
+                                                Salvar
+                                            </button>
+
+                                            <button onClick={() => setEditandoId(null)}>
+                                                Cancelar
+                                            </button>
+                                        </div>
                                     </div>
+                                ) : (
+                                    textoPost && <p>{textoPost}</p>
+                                )}
+
+                                {imagemPost && (
+                                    <img
+                                        className="post-media"
+                                        src={imagemPost}
+                                        alt="Post"
+                                        onError={(e) => {
+                                            e.currentTarget.style.display = "none";
+                                        }}
+                                    />
+                                )}
+
+                                <div className="feed-post-actions">
+                                    <button
+                                        className={post.curtiu ? "liked" : ""}
+                                        onClick={() => curtirPost(post.id)}
+                                    >
+                                        ❤️ {post.total_curtidas || post.likes || 0}
+                                    </button>
+
+                                    <button
+                                        onClick={() =>
+                                            setComentarioAberto(
+                                                comentarioAberto === post.id ? null : post.id
+                                            )
+                                        }
+                                    >
+                                        💬 {post.total_comentarios || post.comentarios?.length || 0}
+                                    </button>
+
+                                    <button onClick={() => compartilhar(post)}>
+                                        🔗 Compartilhar
+                                    </button>
                                 </div>
-                            )}
-                        </article>
-                    ))
+
+                                {comentarioAberto === post.id && (
+                                    <div className="comments-box">
+                                        {(post.comentarios || []).length === 0 ? (
+                                            <p className="no-comments">
+                                                Nenhum comentário ainda.
+                                            </p>
+                                        ) : (
+                                            post.comentarios.map((comentario) => (
+                                                <div
+                                                    className="comment-item"
+                                                    key={comentario.id}
+                                                >
+                                                    <strong>
+                                                        {comentario.autor ||
+                                                            comentario.nome ||
+                                                            "Usuário"}
+                                                    </strong>
+
+                                                    <p>
+                                                        {comentario.conteudo ||
+                                                            comentario.texto}
+                                                    </p>
+
+                                                    <span>
+                                                        {comentario.criado_em
+                                                            ? new Date(
+                                                                comentario.criado_em
+                                                            ).toLocaleString("pt-BR")
+                                                            : comentario.criadoEm ||
+                                                            "Agora mesmo"}
+                                                    </span>
+                                                </div>
+                                            ))
+                                        )}
+
+                                        <div className="comment-form">
+                                            <input
+                                                type="text"
+                                                placeholder="Escreva um comentário..."
+                                                value={novoComentario[post.id] || ""}
+                                                onChange={(e) =>
+                                                    setNovoComentario({
+                                                        ...novoComentario,
+                                                        [post.id]: e.target.value,
+                                                    })
+                                                }
+                                            />
+
+                                            <button onClick={() => comentar(post.id)}>
+                                                Enviar
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </article>
+                        );
+                    })
                 )}
             </div>
         </section>

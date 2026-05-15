@@ -1,0 +1,1205 @@
+const express = require("express");
+const cors = require("cors");
+const { Pool } = require("pg");
+const bcrypt = require("bcrypt");
+const nodemailer = require("nodemailer");
+const { v4: uuidv4 } = require("uuid");
+const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const path = require("path");
+require("dotenv").config();
+
+const app = express();
+
+/* ================= CONFIG ================= */
+
+app.use(
+  cors({
+    origin: ["http://localhost:5173", process.env.FRONTEND_URL],
+    credentials: true,
+  }),
+);
+app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || "postfan_secret_dev";
+
+/* ================= BANCO ================= */
+
+const pool = new Pool({
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: process.env.DB_PORT,
+});
+
+pool
+  .connect()
+  .then((client) => {
+    console.log("✅ Banco de dados conectado com sucesso!");
+    client.release();
+  })
+  .catch((error) => {
+    console.error("❌ Erro ao conectar no banco:");
+    console.error(error.message);
+  });
+
+/* ================= CRIAR TABELAS ================= */
+
+async function criarTabelas() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS usuarios (
+      id SERIAL PRIMARY KEY,
+      nome VARCHAR(150) NOT NULL,
+      email VARCHAR(150) UNIQUE NOT NULL,
+      senha TEXT NOT NULL,
+      foto TEXT,
+      bio TEXT,
+      token_recuperacao TEXT,
+      token_expira TIMESTAMP,
+      criado_em TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS posts (
+      id SERIAL PRIMARY KEY,
+      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+      conteudo TEXT,
+      tema VARCHAR(100),
+      sentimento VARCHAR(100),
+      imagem TEXT,
+      criado_em TIMESTAMP DEFAULT NOW(),
+      atualizado_em TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS curtidas (
+      id SERIAL PRIMARY KEY,
+      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+      post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+      criado_em TIMESTAMP DEFAULT NOW(),
+      UNIQUE(usuario_id, post_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS comentarios (
+      id SERIAL PRIMARY KEY,
+      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+      post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+      conteudo TEXT NOT NULL,
+      criado_em TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS seguidores (
+      id SERIAL PRIMARY KEY,
+      seguidor_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+      seguindo_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+      criado_em TIMESTAMP DEFAULT NOW(),
+      UNIQUE(seguidor_id, seguindo_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS compartilhamentos (
+      id SERIAL PRIMARY KEY,
+      usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+      post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+      criado_em TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  console.log("✅ Tabelas verificadas/criadas com sucesso!");
+}
+
+criarTabelas();
+
+/* ================= UPLOAD ================= */
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + ext);
+  },
+});
+
+const upload = multer({ storage });
+
+/* ================= MIDDLEWARE TOKEN ================= */
+
+function autenticar(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).json({ erro: "Token não enviado." });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).json({ erro: "Token inválido." });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.usuario = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ erro: "Token expirado ou inválido." });
+  }
+}
+
+/* ================= TESTE ================= */
+
+app.get("/", (req, res) => {
+  res.send("Servidor Postfan rodando!");
+});
+
+/* ================= CADASTRO ================= */
+
+app.post("/cadastro", async (req, res) => {
+  try {
+    const { nome, email, senha } = req.body;
+
+    if (!nome || !email || !senha) {
+      return res.status(400).json({ erro: "Preencha todos os campos." });
+    }
+
+    if (senha.length < 6) {
+      return res.status(400).json({
+        erro: "A senha precisa ter pelo menos 6 caracteres.",
+      });
+    }
+
+    const existe = await pool.query(
+      "SELECT id FROM usuarios WHERE email = $1",
+      [email],
+    );
+
+    if (existe.rows.length > 0) {
+      return res.status(400).json({ erro: "Este email já está cadastrado." });
+    }
+
+    const senhaHash = await bcrypt.hash(senha, 10);
+
+    const novo = await pool.query(
+      `INSERT INTO usuarios (nome, email, senha)
+       VALUES ($1, $2, $3)
+       RETURNING id, nome, email, foto, bio, criado_em`,
+      [nome, email, senhaHash],
+    );
+
+    const usuario = novo.rows[0];
+
+    const token = jwt.sign(
+      { id: usuario.id, nome: usuario.nome, email: usuario.email },
+      JWT_SECRET,
+      { expiresIn: "7d" },
+    );
+
+    res.status(201).json({
+      mensagem: "Cadastro realizado com sucesso!",
+      token,
+      usuario,
+    });
+  } catch (error) {
+    console.error("❌ Erro no cadastro:", error.message);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
+
+/* ================= LOGIN ================= */
+
+app.post("/login", async (req, res) => {
+  try {
+    const { email, senha } = req.body;
+
+    if (!email || !senha) {
+      return res.status(400).json({ erro: "Digite email e senha." });
+    }
+
+    const resultado = await pool.query(
+      "SELECT * FROM usuarios WHERE email = $1",
+      [email],
+    );
+
+    if (resultado.rows.length === 0) {
+      return res.status(400).json({ erro: "Email ou senha inválidos." });
+    }
+
+    const usuario = resultado.rows[0];
+    const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
+
+    if (!senhaCorreta) {
+      return res.status(400).json({ erro: "Email ou senha inválidos." });
+    }
+
+    const token = jwt.sign(
+      { id: usuario.id, nome: usuario.nome, email: usuario.email },
+      JWT_SECRET,
+      { expiresIn: "7d" },
+    );
+
+    res.json({
+      mensagem: "Login realizado com sucesso!",
+      token,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        foto: usuario.foto,
+        bio: usuario.bio,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Erro no login:", error.message);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
+
+/* ================= RECUPERAR SENHA ================= */
+
+app.post("/recuperar", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ erro: "Digite seu email." });
+    }
+
+    const resultado = await pool.query(
+      "SELECT * FROM usuarios WHERE email = $1",
+      [email],
+    );
+
+    if (resultado.rows.length === 0) {
+      return res.status(404).json({ erro: "Email não encontrado." });
+    }
+
+    const token = uuidv4();
+    const expira = new Date();
+    expira.setHours(expira.getHours() + 1);
+
+    await pool.query(
+      `UPDATE usuarios
+       SET token_recuperacao = $1, token_expira = $2
+       WHERE email = $3`,
+      [token, expira, email],
+    );
+
+    const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+    const link = `${FRONTEND_URL}/resetar-senha?token=${token}`;
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"Postfan" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "Recuperação de senha - Postfan",
+      html: `
+        <div style="font-family: Arial; padding: 20px;">
+          <h2>Recuperar senha</h2>
+          <p>Clique no botão abaixo para criar uma nova senha:</p>
+          <a href="${link}" style="background:#4f46ff;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;">
+            Criar nova senha
+          </a>
+          <p>Este link expira em 1 hora.</p>
+        </div>
+      `,
+    });
+
+    res.json({ mensagem: "Link de recuperação enviado para seu email." });
+  } catch (error) {
+    console.error("❌ Erro ao recuperar senha:", error.message);
+    res.status(500).json({ erro: "Erro ao enviar email de recuperação." });
+  }
+});
+
+app.post("/resetar", async (req, res) => {
+  try {
+    const { token, novaSenha } = req.body;
+
+    if (!token || !novaSenha) {
+      return res
+        .status(400)
+        .json({ erro: "Token e nova senha são obrigatórios." });
+    }
+
+    if (novaSenha.length < 6) {
+      return res.status(400).json({
+        erro: "A senha precisa ter pelo menos 6 caracteres.",
+      });
+    }
+
+    const resultado = await pool.query(
+      "SELECT * FROM usuarios WHERE token_recuperacao = $1",
+      [token],
+    );
+
+    if (resultado.rows.length === 0) {
+      return res.status(400).json({ erro: "Token inválido." });
+    }
+
+    const usuario = resultado.rows[0];
+
+    if (usuario.token_expira && new Date() > usuario.token_expira) {
+      return res
+        .status(400)
+        .json({ erro: "Token expirado. Solicite outro link." });
+    }
+
+    const senhaHash = await bcrypt.hash(novaSenha, 10);
+
+    await pool.query(
+      `UPDATE usuarios
+       SET senha = $1, token_recuperacao = NULL, token_expira = NULL
+       WHERE id = $2`,
+      [senhaHash, usuario.id],
+    );
+
+    res.json({ mensagem: "Senha alterada com sucesso!" });
+  } catch (error) {
+    console.error("❌ Erro ao resetar senha:", error.message);
+    res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
+
+/* ================= USUÁRIO LOGADO ================= */
+
+app.get("/me", autenticar, async (req, res) => {
+  try {
+    const usuario = await pool.query(
+      `SELECT id, nome, email, foto, bio, criado_em
+       FROM usuarios
+       WHERE id = $1`,
+      [req.usuario.id],
+    );
+
+    res.json(usuario.rows[0]);
+  } catch (error) {
+    res.status(500).json({ erro: "Erro ao buscar usuário." });
+  }
+});
+
+/* ================= EDITAR PERFIL ================= */
+
+app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
+  try {
+    const {
+      nome,
+      bio,
+      essencia_representa,
+      essencia_tema,
+      essencia_frase,
+      aberto_para,
+    } = req.body;
+
+    let fotoUrl = null;
+
+    if (req.file) {
+      fotoUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+    }
+
+    const atual = await pool.query("SELECT * FROM usuarios WHERE id = $1", [
+      req.usuario.id,
+    ]);
+
+    if (atual.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
+    const usuarioAtual = atual.rows[0];
+
+    const resultado = await pool.query(
+      `
+      UPDATE usuarios
+      SET 
+        nome = $1,
+        bio = $2,
+        foto = $3,
+        essencia_representa = $4,
+        essencia_tema = $5,
+        essencia_frase = $6,
+        aberto_para = $7
+      WHERE id = $8
+      RETURNING 
+        id, nome, email, foto, bio,
+        essencia_representa,
+        essencia_tema,
+        essencia_frase,
+        aberto_para
+      `,
+      [
+        nome || usuarioAtual.nome,
+        bio || usuarioAtual.bio,
+        fotoUrl || usuarioAtual.foto,
+        essencia_representa || usuarioAtual.essencia_representa,
+        essencia_tema || usuarioAtual.essencia_tema,
+        essencia_frase || usuarioAtual.essencia_frase,
+        aberto_para || usuarioAtual.aberto_para,
+        req.usuario.id,
+      ],
+    );
+
+    res.json({
+      mensagem: "Perfil atualizado com sucesso!",
+      usuario: resultado.rows[0],
+    });
+  } catch (error) {
+    console.error("Erro ao editar perfil:", error.message);
+    res.status(500).json({ erro: "Erro ao editar perfil." });
+  }
+});
+
+/* ================= UPLOAD AVULSO ================= */
+
+app.post("/upload", autenticar, upload.single("imagem"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ erro: "Nenhuma imagem enviada." });
+  }
+
+  res.json({
+    url: `http://localhost:${PORT}/uploads/${req.file.filename}`,
+  });
+});
+
+/* ================= CRIAR POST ================= */
+
+app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
+  try {
+    const { conteudo, tema, sentimento } = req.body;
+
+    let imagem = null;
+
+    if (req.file) {
+      imagem = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+    }
+
+    if (!conteudo && !imagem) {
+      return res.status(400).json({
+        erro: "Escreva algo ou envie uma imagem.",
+      });
+    }
+
+    const novo = await pool.query(
+      `
+      INSERT INTO posts (usuario_id, conteudo, tema, sentimento, imagem)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [req.usuario.id, conteudo, tema, sentimento, imagem],
+    );
+
+    const postCompleto = await pool.query(
+      `
+      SELECT 
+        p.*,
+        u.nome,
+        u.email,
+        u.foto,
+        0 AS total_curtidas,
+        0 AS total_comentarios,
+        0 AS total_compartilhamentos,
+        false AS curtiu
+      FROM posts p
+      JOIN usuarios u ON u.id = p.usuario_id
+      WHERE p.id = $1
+      `,
+      [novo.rows[0].id],
+    );
+
+    res.status(201).json({
+      mensagem: "Post criado com sucesso!",
+      post: postCompleto.rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Erro ao criar post:", error.message);
+    res.status(500).json({ erro: "Erro ao criar post." });
+  }
+});
+/* ================= LISTAR POSTS ================= */
+
+app.get("/posts", autenticar, async (req, res) => {
+  try {
+    const posts = await pool.query(
+      `
+      SELECT 
+        p.*,
+        u.nome,
+        u.email,
+        u.foto,
+        COUNT(DISTINCT c.id) AS total_curtidas,
+        COUNT(DISTINCT cm.id) AS total_comentarios,
+        COUNT(DISTINCT sh.id) AS total_compartilhamentos,
+        EXISTS (
+          SELECT 1 FROM curtidas 
+          WHERE curtidas.post_id = p.id 
+          AND curtidas.usuario_id = $1
+        ) AS curtiu
+      FROM posts p
+      JOIN usuarios u ON u.id = p.usuario_id
+      LEFT JOIN curtidas c ON c.post_id = p.id
+      LEFT JOIN comentarios cm ON cm.post_id = p.id
+      LEFT JOIN compartilhamentos sh ON sh.post_id = p.id
+      GROUP BY p.id, u.id
+      ORDER BY p.criado_em DESC
+      `,
+      [req.usuario.id],
+    );
+
+    res.json(posts.rows);
+  } catch (error) {
+    console.error("❌ Erro ao listar posts:", error.message);
+    res.status(500).json({ erro: "Erro ao listar posts." });
+  }
+});
+
+/* ================= EDITAR POST ================= */
+
+app.put("/posts/:id", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { conteudo, tema, sentimento } = req.body;
+
+    const post = await pool.query("SELECT * FROM posts WHERE id = $1", [id]);
+
+    if (post.rows.length === 0) {
+      return res.status(404).json({ erro: "Post não encontrado." });
+    }
+
+    if (post.rows[0].usuario_id !== req.usuario.id) {
+      return res.status(403).json({ erro: "Você não pode editar este post." });
+    }
+
+    const atualizado = await pool.query(
+      `UPDATE posts
+       SET conteudo = $1, tema = $2, sentimento = $3, atualizado_em = NOW()
+       WHERE id = $4
+       RETURNING *`,
+      [conteudo, tema, sentimento, id],
+    );
+
+    res.json({
+      mensagem: "Post editado com sucesso!",
+      post: atualizado.rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Erro ao editar post:", error.message);
+    res.status(500).json({ erro: "Erro ao editar post." });
+  }
+});
+
+/* ================= EXCLUIR POST ================= */
+
+app.delete("/posts/:id", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const post = await pool.query("SELECT * FROM posts WHERE id = $1", [id]);
+
+    if (post.rows.length === 0) {
+      return res.status(404).json({ erro: "Post não encontrado." });
+    }
+
+    if (post.rows[0].usuario_id !== req.usuario.id) {
+      return res.status(403).json({ erro: "Você não pode excluir este post." });
+    }
+
+    await pool.query("DELETE FROM posts WHERE id = $1", [id]);
+
+    res.json({ mensagem: "Post excluído com sucesso!" });
+  } catch (error) {
+    console.error("❌ Erro ao excluir post:", error.message);
+    res.status(500).json({ erro: "Erro ao excluir post." });
+  }
+});
+
+/* ================= CURTIR / DESCURTIR ================= */
+
+app.post("/curtir", autenticar, async (req, res) => {
+  try {
+    const { post_id } = req.body;
+
+    if (!post_id) {
+      return res.status(400).json({ erro: "post_id é obrigatório." });
+    }
+
+    const existe = await pool.query(
+      "SELECT * FROM curtidas WHERE usuario_id = $1 AND post_id = $2",
+      [req.usuario.id, post_id],
+    );
+
+    if (existe.rows.length > 0) {
+      await pool.query(
+        "DELETE FROM curtidas WHERE usuario_id = $1 AND post_id = $2",
+        [req.usuario.id, post_id],
+      );
+
+      return res.json({ mensagem: "Curtida removida.", curtiu: false });
+    }
+
+    await pool.query(
+      "INSERT INTO curtidas (usuario_id, post_id) VALUES ($1, $2)",
+      [req.usuario.id, post_id],
+    );
+
+    res.json({ mensagem: "Post curtido.", curtiu: true });
+  } catch (error) {
+    console.error("❌ Erro ao curtir:", error.message);
+    res.status(500).json({ erro: "Erro ao curtir post." });
+  }
+});
+
+/* ================= COMENTÁRIOS ================= */
+
+app.get("/comentarios", autenticar, async (req, res) => {
+  try {
+    const { post_id } = req.query;
+
+    const comentarios = await pool.query(
+      `
+      SELECT 
+        cm.*,
+        u.nome,
+        u.foto
+      FROM comentarios cm
+      JOIN usuarios u ON u.id = cm.usuario_id
+      WHERE cm.post_id = $1
+      ORDER BY cm.criado_em ASC
+      `,
+      [post_id],
+    );
+
+    res.json(comentarios.rows);
+  } catch (error) {
+    console.error("❌ Erro ao buscar comentários:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar comentários." });
+  }
+});
+
+app.post("/comentarios", autenticar, async (req, res) => {
+  try {
+    const { post_id, conteudo } = req.body;
+
+    if (!post_id || !conteudo) {
+      return res
+        .status(400)
+        .json({ erro: "post_id e conteudo são obrigatórios." });
+    }
+
+    const novo = await pool.query(
+      `
+      INSERT INTO comentarios (usuario_id, post_id, conteudo)
+      VALUES ($1, $2, $3)
+      RETURNING *
+      `,
+      [req.usuario.id, post_id, conteudo],
+    );
+
+    res.status(201).json({
+      mensagem: "Comentário criado com sucesso!",
+      comentario: novo.rows[0],
+    });
+  } catch (error) {
+    console.error("❌ Erro ao comentar:", error.message);
+    res.status(500).json({ erro: "Erro ao comentar." });
+  }
+});
+
+/* ================= COMPARTILHAR ================= */
+
+app.post("/compartilhar", autenticar, async (req, res) => {
+  try {
+    const { post_id } = req.body;
+
+    if (!post_id) {
+      return res.status(400).json({ erro: "post_id é obrigatório." });
+    }
+
+    await pool.query(
+      "INSERT INTO compartilhamentos (usuario_id, post_id) VALUES ($1, $2)",
+      [req.usuario.id, post_id],
+    );
+
+    res.json({ mensagem: "Compartilhamento registrado com sucesso!" });
+  } catch (error) {
+    console.error("❌ Erro ao compartilhar:", error.message);
+    res.status(500).json({ erro: "Erro ao compartilhar." });
+  }
+});
+
+/* ================= SUGESTÕES ================= */
+
+app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
+  try {
+    const sugestoes = await pool.query(
+      `
+      SELECT 
+        u.id,
+        u.nome,
+        u.email,
+        u.foto,
+        u.bio,
+
+        EXISTS (
+          SELECT 1
+          FROM seguidores s
+          WHERE s.seguidor_id = $1
+          AND s.seguindo_id = u.id
+        ) AS seguindo
+
+      FROM usuarios u
+      WHERE u.id != $1
+      ORDER BY u.id DESC
+      `,
+      [req.usuario.id],
+    );
+
+    res.json(sugestoes.rows);
+  } catch (error) {
+    console.error("Erro ao buscar sugestões:", error);
+
+    res.status(500).json({
+      erro: "Erro ao buscar sugestões.",
+      detalhe: error.message,
+    });
+  }
+});
+
+/* ================= SEGUIR / DEIXAR DE SEGUIR ================= */
+
+app.get("/usuarios/:id", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const usuario = await pool.query(
+      `
+      SELECT 
+        id, nome, email, foto, bio, criado_em,
+        essencia_representa,
+        essencia_tema,
+        essencia_frase,
+        aberto_para
+      FROM usuarios
+      WHERE id = $1
+      `,
+      [id],
+    );
+
+    if (usuario.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
+    res.json(usuario.rows[0]);
+  } catch (error) {
+    res.status(500).json({ erro: "Erro ao buscar usuário." });
+  }
+});
+
+/* ================= ESTATÍSTICAS DO PERFIL ================= */
+
+app.get("/perfil/stats/:id", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const stats = await pool.query(
+      `
+      SELECT
+        COALESCE((SELECT COUNT(*) FROM posts WHERE usuario_id = $1), 0) AS total_posts,
+        COALESCE((SELECT COUNT(*) FROM seguidores WHERE seguindo_id = $1), 0) AS total_seguidores,
+        COALESCE((SELECT COUNT(*) FROM seguidores WHERE seguidor_id = $1), 0) AS total_seguindo,
+        EXISTS (
+          SELECT 1 FROM seguidores
+          WHERE seguidor_id = $2 AND seguindo_id = $1
+        ) AS seguindo
+      `,
+      [id, req.usuario.id],
+    );
+
+    res.json(stats.rows[0]);
+  } catch (error) {
+    console.error("❌ Erro ao buscar estatísticas:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar estatísticas." });
+  }
+});
+
+/* ================= POSTS DO PERFIL ================= */
+
+app.get("/usuarios/:id/posts", autenticar, async (req, res) => {
+  try {
+    const usuarioId = Number(req.params.id);
+
+    const posts = await pool.query(
+      `
+      SELECT
+        p.*,
+        u.nome,
+        u.email,
+        u.foto,
+        COALESCE((SELECT COUNT(*) FROM curtidas WHERE post_id = p.id), 0) AS total_curtidas,
+        COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios
+      FROM posts p
+      JOIN usuarios u ON u.id = p.usuario_id
+      WHERE p.usuario_id = $1
+      ORDER BY p.criado_em DESC
+      `,
+      [usuarioId],
+    );
+
+    res.json(posts.rows);
+  } catch (error) {
+    console.error("Erro ao buscar posts do perfil:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar posts." });
+  }
+});
+
+/* ================= SEGUIR USUÁRIO ================= */
+
+app.post("/seguir/:id", autenticar, async (req, res) => {
+  const seguidor_id = req.usuario.id;
+  const seguindo_id = Number(req.params.id);
+
+  try {
+    if (seguidor_id === seguindo_id) {
+      return res.status(400).json({
+        erro: "Você não pode seguir você mesmo.",
+      });
+    }
+
+    // verifica se já segue
+    const existe = await pool.query(
+      `
+      SELECT * FROM seguidores
+      WHERE seguidor_id = $1
+      AND seguindo_id = $2
+      `,
+      [seguidor_id, seguindo_id],
+    );
+
+    // se já segue -> deixa de seguir
+    if (existe.rows.length > 0) {
+      await pool.query(
+        `
+        DELETE FROM seguidores
+        WHERE seguidor_id = $1
+        AND seguindo_id = $2
+        `,
+        [seguidor_id, seguindo_id],
+      );
+
+      return res.json({
+        seguindo: false,
+      });
+    }
+
+    // seguir
+    await pool.query(
+      `
+      INSERT INTO seguidores
+      (seguidor_id, seguindo_id)
+      VALUES ($1, $2)
+      `,
+      [seguidor_id, seguindo_id],
+    );
+
+    res.json({
+      seguindo: true,
+    });
+  } catch (error) {
+    console.error("Erro ao seguir:", error);
+
+    res.status(500).json({
+      erro: "Erro interno ao seguir usuário.",
+    });
+  }
+});
+
+/* ================= CRIAR GRUPO ================= */
+
+app.post("/api/grupos", autenticar, async (req, res) => {
+  try {
+    const { nome, descricao, categoria } = req.body;
+
+    if (!nome || !descricao) {
+      return res
+        .status(400)
+        .json({ erro: "Nome e descrição são obrigatórios." });
+    }
+
+    let codigo = gerarCodigoGrupo();
+
+    const grupo = await pool.query(
+      `
+      INSERT INTO grupos (dono_id, nome, descricao, categoria, codigo_convite)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [req.usuario.id, nome, descricao, categoria || "Geral", codigo],
+    );
+
+    const novoGrupo = grupo.rows[0];
+
+    await pool.query(
+      `
+      INSERT INTO grupo_membros (grupo_id, usuario_id, papel)
+      VALUES ($1, $2, $3)
+      `,
+      [novoGrupo.id, req.usuario.id, "admin"],
+    );
+
+    res.status(201).json({
+      mensagem: "Grupo criado com sucesso!",
+      grupo: novoGrupo,
+    });
+  } catch (error) {
+    console.error("Erro ao criar grupo:", error.message);
+    res.status(500).json({ erro: "Erro ao criar grupo." });
+  }
+});
+
+/* ================= MEUS GRUPOS ================= */
+
+app.get("/api/meus-grupos", autenticar, async (req, res) => {
+  try {
+    const grupos = await pool.query(
+      `
+      SELECT 
+        g.*,
+        gm.papel,
+        u.nome AS dono_nome,
+        COUNT(m.id) AS total_membros
+      FROM grupos g
+      JOIN grupo_membros gm ON gm.grupo_id = g.id
+      JOIN usuarios u ON u.id = g.dono_id
+      LEFT JOIN grupo_membros m ON m.grupo_id = g.id
+      WHERE gm.usuario_id = $1
+      GROUP BY g.id, gm.papel, u.nome
+      ORDER BY g.criado_em DESC
+      `,
+      [req.usuario.id],
+    );
+
+    res.json(grupos.rows);
+  } catch (error) {
+    console.error("Erro ao buscar meus grupos:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar grupos." });
+  }
+});
+
+/* ================= EXPLORAR GRUPOS ================= */
+
+app.get("/api/grupos", autenticar, async (req, res) => {
+  try {
+    const grupos = await pool.query(
+      `
+      SELECT 
+        g.id,
+        g.nome,
+        g.descricao,
+        g.categoria,
+        g.criado_em,
+        u.nome AS dono_nome,
+        COUNT(gm.id) AS total_membros
+      FROM grupos g
+      JOIN usuarios u ON u.id = g.dono_id
+      LEFT JOIN grupo_membros gm ON gm.grupo_id = g.id
+      GROUP BY g.id, u.nome
+      ORDER BY g.criado_em DESC
+      `,
+    );
+
+    res.json(grupos.rows);
+  } catch (error) {
+    console.error("Erro ao explorar grupos:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar grupos." });
+  }
+});
+
+/* ================= ENTRAR COM CÓDIGO ================= */
+
+app.post("/api/grupos/entrar", autenticar, async (req, res) => {
+  try {
+    const { codigo } = req.body;
+
+    if (!codigo) {
+      return res.status(400).json({ erro: "Digite o código do grupo." });
+    }
+
+    const grupo = await pool.query(
+      "SELECT * FROM grupos WHERE codigo_convite = $1",
+      [codigo.toUpperCase()],
+    );
+
+    if (grupo.rows.length === 0) {
+      return res.status(404).json({ erro: "Código inválido." });
+    }
+
+    const grupoId = grupo.rows[0].id;
+
+    const existe = await pool.query(
+      `
+      SELECT * FROM grupo_membros
+      WHERE grupo_id = $1 AND usuario_id = $2
+      `,
+      [grupoId, req.usuario.id],
+    );
+
+    if (existe.rows.length > 0) {
+      return res.json({
+        mensagem: "Você já está nesse grupo.",
+        grupo: grupo.rows[0],
+      });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO grupo_membros (grupo_id, usuario_id, papel)
+      VALUES ($1, $2, 'membro')
+      `,
+      [grupoId, req.usuario.id],
+    );
+
+    res.json({
+      mensagem: "Você entrou no grupo!",
+      grupo: grupo.rows[0],
+    });
+  } catch (error) {
+    console.error("Erro ao entrar no grupo:", error.message);
+    res.status(500).json({ erro: "Erro ao entrar no grupo." });
+  }
+});
+
+/* ================= DADOS DO GRUPO ================= */
+
+app.get("/api/grupos/:id", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const grupo = await pool.query(
+      `
+      SELECT 
+        g.*,
+        gm.papel,
+        u.nome AS dono_nome
+      FROM grupos g
+      JOIN grupo_membros gm ON gm.grupo_id = g.id
+      JOIN usuarios u ON u.id = g.dono_id
+      WHERE g.id = $1 AND gm.usuario_id = $2
+      `,
+      [id, req.usuario.id],
+    );
+
+    if (grupo.rows.length === 0) {
+      return res
+        .status(403)
+        .json({ erro: "Você não tem acesso a esse grupo." });
+    }
+
+    res.json(grupo.rows[0]);
+  } catch (error) {
+    res.status(500).json({ erro: "Erro ao buscar grupo." });
+  }
+});
+
+/* ================= MENSAGENS DO GRUPO ================= */
+
+app.get("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const mensagens = await pool.query(
+      `
+      SELECT 
+        gm.*,
+        u.nome,
+        u.foto
+      FROM grupo_mensagens gm
+      JOIN usuarios u ON u.id = gm.usuario_id
+      WHERE gm.grupo_id = $1
+      ORDER BY gm.criado_em ASC
+      `,
+      [id],
+    );
+
+    res.json(mensagens.rows);
+  } catch (error) {
+    res.status(500).json({ erro: "Erro ao buscar mensagens." });
+  }
+});
+
+/* ================= ENVIAR MENSAGEM ================= */
+
+app.post("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { mensagem } = req.body;
+
+    if (!mensagem) {
+      return res.status(400).json({ erro: "Digite uma mensagem." });
+    }
+
+    const membro = await pool.query(
+      `
+      SELECT * FROM grupo_membros
+      WHERE grupo_id = $1 AND usuario_id = $2
+      `,
+      [id, req.usuario.id],
+    );
+
+    if (membro.rows.length === 0) {
+      return res.status(403).json({ erro: "Você não participa desse grupo." });
+    }
+
+    const nova = await pool.query(
+      `
+      INSERT INTO grupo_mensagens (grupo_id, usuario_id, mensagem)
+      VALUES ($1, $2, $3)
+      RETURNING *
+      `,
+      [id, req.usuario.id, mensagem],
+    );
+
+    res.status(201).json({
+      mensagem: "Mensagem enviada!",
+      dados: nova.rows[0],
+    });
+  } catch (error) {
+    res.status(500).json({ erro: "Erro ao enviar mensagem." });
+  }
+});
+
+app.delete("/api/grupos/:id", autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const grupo = await pool.query("SELECT * FROM grupos WHERE id = $1", [id]);
+
+    if (grupo.rows.length === 0) {
+      return res.status(404).json({ erro: "Grupo não encontrado." });
+    }
+
+    if (Number(grupo.rows[0].dono_id) !== Number(req.usuario.id)) {
+      return res.status(403).json({
+        erro: "Apenas o administrador pode excluir este grupo.",
+      });
+    }
+
+    await pool.query("DELETE FROM grupos WHERE id = $1", [id]);
+
+    res.json({ mensagem: "Grupo excluído com sucesso!" });
+  } catch (error) {
+    console.error("Erro ao excluir grupo:", error.message);
+    res.status(500).json({ erro: "Erro ao excluir grupo." });
+  }
+});
+
+/* ================= INICIAR SERVIDOR ================= */
+
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor Postfan rodando na porta ${PORT}`);
+});

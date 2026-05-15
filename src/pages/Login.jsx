@@ -72,7 +72,7 @@ export default function Login() {
                     <h1>POSTFAN</h1>
                 </div>
 
-                <img src={Imagem3} alt="Postfan" className="login-image" />
+                <img src={imagem3} alt="Postfan" className="login-image" />
 
                 <div className="login-overlay"></div>
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaEye, FaEyeSlash } from "react-icons/fa";
-import imagemLogin from "../assets/Img/Imagem3.png";
+import Imagem3 from "../assets/img/Imagem3.png";
 import "../styles/style.css";
 
 export default function Login() {
@@ -72,7 +72,7 @@ export default function Login() {
                     <h1>POSTFAN</h1>
                 </div>
 
-                <img src={imagemLogin} alt="Postfan" className="login-image" />
+                <img src={Imagem3} alt="Postfan" className="login-image" />
 
                 <div className="login-overlay"></div>
 

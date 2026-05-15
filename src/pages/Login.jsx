@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaEye, FaEyeSlash } from "react-icons/fa";
 import imagem3 from "../assets/img/imagem3.png";
 import "../styles/style.css";
+import api from "../services/api";
 
 export default function Login() {
     const navigate = useNavigate();
@@ -36,29 +37,28 @@ export default function Login() {
         setLoading(true);
 
         try {
-            const res = await fetch("http://localhost:5000/login", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(form),
-            });
 
-            const data = await res.json();
+            const res = await api.post("/login", form);
 
-            if (res.ok) {
-                if (data.token) {
-                    localStorage.setItem("token", data.token);
-                }
+            const data = res.data;
 
-                localStorage.setItem("usuario", JSON.stringify(data.usuario));
-
-                navigate("/feed");
-            } else {
-                setErro(data.erro || "Email ou senha inválidos.");
+            if (data.token) {
+                localStorage.setItem("token", data.token);
             }
-        } catch {
-            setErro("Erro ao conectar com o servidor.");
+
+            localStorage.setItem(
+                "usuario",
+                JSON.stringify(data.usuario)
+            );
+
+            navigate("/feed");
+
+        } catch (error) {
+
+            setErro(
+                error.response?.data?.erro ||
+                "Email ou senha inválidos."
+            );
         }
 
         setLoading(false);

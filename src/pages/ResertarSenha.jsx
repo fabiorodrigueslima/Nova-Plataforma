@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import "../styles/style.css";
+import api from "../services/api";
 
 export default function ResetarSenha() {
     const [searchParams] = useSearchParams();
@@ -41,18 +42,12 @@ export default function ResetarSenha() {
         try {
             setLoading(true);
 
-            const resposta = await fetch("http://localhost:5000/resetar", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    token,
-                    novaSenha: senha
-                })
+            const resposta = await api.post("/resetar", {
+                token,
+                novaSenha: senha,
             });
 
-            const dados = await resposta.json();
+            const dados = resposta.data;
 
             if (!resposta.ok) {
                 setErro(dados.erro || "Erro ao redefinir senha.");

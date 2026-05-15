@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/style.css";
+import api from "../services/api";
 
 export default function Sugestoes() {
     const navigate = useNavigate();
@@ -10,48 +11,58 @@ export default function Sugestoes() {
     const [loading, setLoading] = useState(true);
 
     async function carregarSugestoes() {
-        try {
-            const res = await fetch("http://localhost:5000/usuarios/sugestoes", {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
 
-            const data = await res.json();
-            setUsuarios(Array.isArray(data) ? data : []);
+        try {
+
+            const res = await api.get("/usuarios/sugestoes");
+
+            const data = res.data;
+
+            setUsuarios(
+                Array.isArray(data) ? data : []
+            );
+
         } catch (error) {
-            console.error("Erro ao buscar sugestões:", error);
+
+            console.error(
+                "Erro ao buscar sugestões:",
+                error
+            );
+
         } finally {
+
             setLoading(false);
         }
     }
-
     async function seguirUsuario(id) {
+
         try {
-            const res = await fetch(`http://localhost:5000/seguir/${id}`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
 
-            const data = await res.json();
+            const res = await api.post(`/seguir/${id}`);
 
-            if (!res.ok) {
-                alert(data.erro || "Erro ao seguir usuário.");
-                return;
-            }
+            const data = res.data;
 
             setUsuarios((prev) =>
                 prev.map((user) =>
-                    user.id === id ? { ...user, seguindo: data.seguindo } : user
+                    user.id === id
+                        ? {
+                            ...user,
+                            seguindo: data.seguindo
+                        }
+                        : user
                 )
             );
+
         } catch (error) {
+
             console.error("Erro ao seguir:", error);
+
+            alert(
+                error.response?.data?.erro ||
+                "Erro ao seguir usuário."
+            );
         }
     }
-
     useEffect(() => {
         carregarSugestoes();
     }, []);

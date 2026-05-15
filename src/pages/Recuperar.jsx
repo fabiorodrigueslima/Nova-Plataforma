@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../services/api";
 
 import "../styles/style.css";
 
@@ -31,38 +32,25 @@ export default function Recuperar() {
 
         try {
 
-            const res = await fetch("http://localhost:5000/recuperar", {
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json",
-                },
-
-                body: JSON.stringify({ email }),
+            const res = await api.post("/recuperar", {
+                email
             });
 
-            const data = await res.json();
+            const data = res.data;
 
-            if (res.ok) {
+            setMensagem(
+                "Enviamos um link de recuperação para seu email."
+            );
 
-                setMensagem(
-                    "Enviamos um link de recuperação para seu email."
-                );
+        } catch (error) {
 
-            } else {
-
-                setErro(data.erro || "Erro ao recuperar senha.");
-
-            }
-
-        } catch {
-
-            setErro("Erro ao conectar com o servidor.");
-
+            setErro(
+                error.response?.data?.erro ||
+                "Erro ao recuperar senha."
+            );
         }
 
         setLoading(false);
-
     }
 
     return (

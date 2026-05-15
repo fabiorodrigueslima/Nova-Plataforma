@@ -19,97 +19,108 @@ export default function RightPanel({ posts = [] }) {
   });
 
   async function carregarUsuarioLogado() {
+
     try {
+
       if (!token) return;
 
-      const res = await fetch("http://localhost:5000/me", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await api.get("/me");
 
-      const data = await res.json();
+      const data = res.data;
 
-      if (res.ok) {
-        setUsuario(data);
-        localStorage.setItem("usuario", JSON.stringify(data));
-      }
+      setUsuario(data);
+
+      localStorage.setItem(
+        "usuario",
+        JSON.stringify(data)
+      );
+
     } catch (error) {
-      console.error("Erro ao buscar usuário logado:", error);
+
+      console.error(
+        "Erro ao buscar usuário logado:",
+        error
+      );
     }
   }
-
   async function carregarSugestoes() {
+
     try {
+
       if (!token) return;
 
-      const res = await fetch("http://localhost:5000/usuarios/sugestoes", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const res = await api.get("/usuarios/sugestoes");
 
-      const data = await res.json();
-      setUsuariosReais(Array.isArray(data) ? data : []);
+      const data = res.data;
+
+      setUsuariosReais(
+        Array.isArray(data) ? data : []
+      );
+
     } catch (error) {
-      console.error("Erro ao buscar sugestões:", error);
+
+      console.error(
+        "Erro ao buscar sugestões:",
+        error
+      );
     }
   }
 
   async function carregarStats(idUsuario = usuario?.id) {
+
     if (!idUsuario || !token) return;
 
     try {
-      const res = await fetch(
-        `http://localhost:5000/perfil/stats/${idUsuario}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+
+      const res = await api.get(
+        `/perfil/stats/${idUsuario}`
       );
 
-      const data = await res.json();
+      const data = res.data;
 
-      if (res.ok) {
-        setStats({
-          total_posts: Number(data.total_posts) || 0,
-          total_seguindo: Number(data.total_seguindo) || 0,
-          total_seguidores: Number(data.total_seguidores) || 0,
-        });
-      }
-    } catch (error) {
-      console.error("Erro ao buscar estatísticas:", error);
-    }
-  }
-
-  async function seguirUsuario(id) {
-    try {
-      const res = await fetch(`http://localhost:5000/seguir/${id}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      setStats({
+        total_posts: Number(data.total_posts) || 0,
+        total_seguindo: Number(data.total_seguindo) || 0,
+        total_seguidores: Number(data.total_seguidores) || 0,
       });
 
-      const data = await res.json();
+    } catch (error) {
 
-      if (!res.ok) {
-        alert(data.erro || "Erro ao seguir usuário.");
-        return;
-      }
+      console.error(
+        "Erro ao buscar estatísticas:",
+        error
+      );
+    }
+  }
+  async function seguirUsuario(id) {
+
+    try {
+
+      const res = await api.post(`/seguir/${id}`);
+
+      const data = res.data;
 
       setUsuariosReais((prev) =>
         prev.map((user) =>
           Number(user.id) === Number(id)
-            ? { ...user, seguindo: data.seguindo }
+            ? {
+              ...user,
+              seguindo: data.seguindo
+            }
             : user
         )
       );
 
       carregarStats(usuario?.id);
+
     } catch (error) {
+
       console.error("Erro ao seguir:", error);
+
+      alert(
+        error.response?.data?.erro ||
+        "Erro ao seguir usuário."
+      );
     }
   }
 

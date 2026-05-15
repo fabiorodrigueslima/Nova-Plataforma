@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaImage, FaEye, FaEyeSlash } from "react-icons/fa";
-import imagem3 from "../assets/Img/Imagem3.png";
+import Imagem3 from "../assets/Img/imagem3.png";
 import "../styles/style.css";
 
 export default function Cadastro() {

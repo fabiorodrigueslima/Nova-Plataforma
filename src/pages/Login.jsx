@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaEye, FaEyeSlash } from "react-icons/fa";
-import Imagem3 from "../assets/img/Imagem3.png";
+import Imagem3 from "../assets/Img/imagem3.png";
 import "../styles/style.css";
 
 export default function Login() {

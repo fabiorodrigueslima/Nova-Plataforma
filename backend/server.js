@@ -29,8 +29,11 @@ const allowedOrigins = [
   "http://localhost:5175",
   "http://localhost:5176",
   "http://localhost:5177",
+
   "https://postfan-novo.netlify.app",
   "https://5a06890e--postfan-novo.netlify.app",
+
+  "https://postfan-novo-7opc.vercel.app",
 ];
 
 if (process.env.FRONTEND_URL) {

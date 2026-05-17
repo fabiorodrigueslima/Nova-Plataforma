@@ -140,6 +140,8 @@ async function criarTabelas() {
         tema VARCHAR(100),
         sentimento VARCHAR(100),
         imagem TEXT,
+        tipo_arquivo VARCHAR(50),
+        nome_arquivo TEXT,
         criado_em TIMESTAMP DEFAULT NOW(),
         atualizado_em TIMESTAMP DEFAULT NOW()
       );
@@ -201,11 +203,28 @@ async function criarTabelas() {
         mensagem TEXT NOT NULL,
         criado_em TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bio TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_representa TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_tema TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_frase TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aberto_para TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_recuperacao TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_expira TIMESTAMP;
+
+      ALTER TABLE posts ADD COLUMN IF NOT EXISTS conteudo TEXT;
+      ALTER TABLE posts ADD COLUMN IF NOT EXISTS tema VARCHAR(100);
+      ALTER TABLE posts ADD COLUMN IF NOT EXISTS sentimento VARCHAR(100);
+      ALTER TABLE posts ADD COLUMN IF NOT EXISTS imagem TEXT;
+      ALTER TABLE posts ADD COLUMN IF NOT EXISTS tipo_arquivo VARCHAR(50);
+      ALTER TABLE posts ADD COLUMN IF NOT EXISTS nome_arquivo TEXT;
+      ALTER TABLE posts ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW();
     `);
 
-    console.log("✅ Tabelas verificadas/criadas com sucesso!");
+    console.log("✅ Tabelas verificadas/atualizadas com sucesso!");
   } catch (error) {
-    console.error("❌ Erro ao criar tabelas:", error.message);
+    console.error("❌ Erro ao criar/atualizar tabelas:", error.message);
   }
 }
 
@@ -677,39 +696,80 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
 });
 
 /* ================= LISTAR POSTS ================= */
-
-app.get("/posts", autenticar, async (req, res) => {
+app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
   try {
-    const posts = await pool.query(
+    const { conteudo, tema, sentimento } = req.body;
+
+    let imagem = null;
+    let tipoArquivo = null;
+    let nomeArquivo = null;
+
+    if (req.file) {
+      imagem = `${BACKEND_URL}/uploads/${req.file.filename}`;
+      tipoArquivo = req.file.mimetype;
+      nomeArquivo = req.file.originalname;
+    }
+
+    if (!conteudo && !imagem) {
+      return res.status(400).json({
+        erro: "Escreva algo ou envie uma imagem, vídeo ou documento.",
+      });
+    }
+
+    const novo = await pool.query(
+      `
+      INSERT INTO posts (
+        usuario_id,
+        conteudo,
+        tema,
+        sentimento,
+        imagem,
+        tipo_arquivo,
+        nome_arquivo
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+      `,
+      [
+        req.usuario.id,
+        conteudo || "",
+        tema || "Geral",
+        sentimento || "",
+        imagem,
+        tipoArquivo,
+        nomeArquivo,
+      ],
+    );
+
+    const postCompleto = await pool.query(
       `
       SELECT 
         p.*,
         u.nome,
         u.email,
         u.foto,
-        COUNT(DISTINCT c.id) AS total_curtidas,
-        COUNT(DISTINCT cm.id) AS total_comentarios,
-        COUNT(DISTINCT sh.id) AS total_compartilhamentos,
-        EXISTS (
-          SELECT 1 FROM curtidas 
-          WHERE curtidas.post_id = p.id 
-          AND curtidas.usuario_id = $1
-        ) AS curtiu
+        0 AS total_curtidas,
+        0 AS total_comentarios,
+        0 AS total_compartilhamentos,
+        false AS curtiu
       FROM posts p
       JOIN usuarios u ON u.id = p.usuario_id
-      LEFT JOIN curtidas c ON c.post_id = p.id
-      LEFT JOIN comentarios cm ON cm.post_id = p.id
-      LEFT JOIN compartilhamentos sh ON sh.post_id = p.id
-      GROUP BY p.id, u.id
-      ORDER BY p.criado_em DESC
+      WHERE p.id = $1
       `,
-      [req.usuario.id],
+      [novo.rows[0].id],
     );
 
-    res.json(posts.rows);
+    res.status(201).json({
+      mensagem: "Post criado com sucesso!",
+      post: postCompleto.rows[0],
+    });
   } catch (error) {
-    console.error("❌ Erro ao listar posts:", error.message);
-    res.status(500).json({ erro: "Erro ao listar posts." });
+    console.error("❌ Erro ao criar post:", error.message);
+
+    res.status(500).json({
+      erro: "Erro ao criar post.",
+      detalhe: error.message,
+    });
   }
 });
 

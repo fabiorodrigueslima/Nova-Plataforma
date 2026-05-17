@@ -250,12 +250,14 @@ app.get("/", (req, res) => {
 
 /* ================= CADASTRO ================= */
 
-app.post("/cadastro", async (req, res) => {
+app.post("/cadastro", upload.single("foto"), async (req, res) => {
   try {
     const { nome, email, senha } = req.body;
 
     if (!nome || !email || !senha) {
-      return res.status(400).json({ erro: "Preencha todos os campos." });
+      return res.status(400).json({
+        erro: "Preencha todos os os campos.",
+      });
     }
 
     if (senha.length < 6) {
@@ -270,18 +272,38 @@ app.post("/cadastro", async (req, res) => {
     );
 
     if (existe.rows.length > 0) {
-      return res.status(400).json({ erro: "Este email já está cadastrado." });
+      return res.status(400).json({
+        erro: "Este email já está cadastrado.",
+      });
+    }
+
+    let fotoUrl = null;
+
+    if (req.file) {
+      fotoUrl = `${BACKEND_URL}/uploads/${req.file.filename}`;
     }
 
     const senhaHash = await bcrypt.hash(senha, 10);
 
     const novo = await pool.query(
       `
-      INSERT INTO usuarios (nome, email, senha)
-      VALUES ($1, $2, $3)
-      RETURNING id, nome, email, foto, bio, criado_em
+      INSERT INTO usuarios (
+        nome,
+        email,
+        senha,
+        foto
+      )
+      VALUES ($1, $2, $3, $4)
+
+      RETURNING
+        id,
+        nome,
+        email,
+        foto,
+        bio,
+        criado_em
       `,
-      [nome, email, senhaHash],
+      [nome, email, senhaHash, fotoUrl],
     );
 
     const usuario = novo.rows[0];
@@ -293,7 +315,9 @@ app.post("/cadastro", async (req, res) => {
         email: usuario.email,
       },
       JWT_SECRET,
-      { expiresIn: "7d" },
+      {
+        expiresIn: "7d",
+      },
     );
 
     res.status(201).json({
@@ -303,7 +327,10 @@ app.post("/cadastro", async (req, res) => {
     });
   } catch (error) {
     console.error("❌ Erro no cadastro:", error.message);
-    res.status(500).json({ erro: "Erro interno no servidor." });
+
+    res.status(500).json({
+      erro: "Erro interno no servidor.",
+    });
   }
 });
 

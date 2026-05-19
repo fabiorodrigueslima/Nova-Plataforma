@@ -640,62 +640,40 @@ app.post("/upload", autenticar, upload.single("imagem"), (req, res) => {
   });
 });
 
-/* ================= CRIAR POST ================= */
-
-app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
+/* ================= LISTAR POSTS ================= */
+app.get("/posts", autenticar, async (req, res) => {
   try {
-    const { conteudo, tema, sentimento } = req.body;
-
-    let imagem = null;
-
-    if (req.file) {
-      imagem = `${BACKEND_URL}/uploads/${req.file.filename}`;
-    }
-
-    if (!conteudo && !imagem) {
-      return res.status(400).json({
-        erro: "Escreva algo ou envie uma imagem.",
-      });
-    }
-
-    const novo = await pool.query(
-      `
-      INSERT INTO posts (usuario_id, conteudo, tema, sentimento, imagem)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-      `,
-      [req.usuario.id, conteudo, tema, sentimento, imagem],
-    );
-
-    const postCompleto = await pool.query(
+    const posts = await pool.query(
       `
       SELECT 
         p.*,
         u.nome,
         u.email,
         u.foto,
-        0 AS total_curtidas,
-        0 AS total_comentarios,
-        0 AS total_compartilhamentos,
-        false AS curtiu
+        COALESCE((SELECT COUNT(*) FROM curtidas WHERE post_id = p.id), 0) AS total_curtidas,
+        COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios,
+        COALESCE((SELECT COUNT(*) FROM compartilhamentos WHERE post_id = p.id), 0) AS total_compartilhamentos,
+        EXISTS (
+          SELECT 1 FROM curtidas 
+          WHERE curtidas.post_id = p.id 
+          AND curtidas.usuario_id = $1
+        ) AS curtiu
       FROM posts p
       JOIN usuarios u ON u.id = p.usuario_id
-      WHERE p.id = $1
+      ORDER BY p.criado_em DESC
+      LIMIT 50
       `,
-      [novo.rows[0].id],
+      [req.usuario.id],
     );
 
-    res.status(201).json({
-      mensagem: "Post criado com sucesso!",
-      post: postCompleto.rows[0],
-    });
+    res.json(posts.rows);
   } catch (error) {
-    console.error("❌ Erro ao criar post:", error.message);
-    res.status(500).json({ erro: "Erro ao criar post." });
+    console.error("❌ Erro ao buscar posts:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar posts." });
   }
 });
 
-/* ================= LISTAR POSTS ================= */
+/* ================= CRIAR POST ================= */
 app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
   try {
     const { conteudo, tema, sentimento } = req.body;

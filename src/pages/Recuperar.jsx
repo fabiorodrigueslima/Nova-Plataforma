@@ -25,13 +25,26 @@ export default function Recuperar() {
         try {
             setLoading(true);
 
-            await api.post("/recuperar", {
-                email,
-            });
+            await api.post(
+                "/recuperar",
+                {
+                    email,
+                },
+                {
+                    timeout: 45000,
+                }
+            );
 
-            setMensagem("Enviamos um link de recuperação para seu email.");
+            setMensagem("Enviamos um link de recuperação para seu email. Verifique também a caixa de spam.");
             setEmail("");
         } catch (error) {
+            if (error.code === "ECONNABORTED") {
+                setErro(
+                    "O servidor demorou para responder. Tente novamente em alguns minutos."
+                );
+                return;
+            }
+
             setErro(
                 error.response?.data?.erro ||
                 "Erro ao recuperar senha."

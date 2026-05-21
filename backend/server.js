@@ -448,9 +448,19 @@ app.post("/login", async (req, res) => {
 app.post("/recuperar", async (req, res) => {
   try {
     const { email } = req.body;
+    const emailUser = process.env.EMAIL_USER;
+    const emailPass = process.env.EMAIL_PASS;
 
     if (!email) {
       return res.status(400).json({ erro: "Digite seu email." });
+    }
+
+    if (!emailUser || !emailPass) {
+      console.error("EMAIL_USER ou EMAIL_PASS não configurado.");
+      return res.status(503).json({
+        erro:
+          "Recuperação de senha indisponível no momento. Configure o email do servidor.",
+      });
     }
 
     const resultado = await pool.query(
@@ -480,14 +490,17 @@ app.post("/recuperar", async (req, res) => {
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
+        user: emailUser,
+        pass: emailPass,
       },
     });
 
     await transporter.sendMail({
-      from: `"Postfan" <${process.env.EMAIL_USER}>`,
+      from: `"Postfan" <${emailUser}>`,
       to: email,
       subject: "Recuperação de senha - Postfan",
       html: `
@@ -505,6 +518,17 @@ app.post("/recuperar", async (req, res) => {
     res.json({ mensagem: "Link de recuperação enviado para seu email." });
   } catch (error) {
     console.error("❌ Erro ao recuperar senha:", error.message);
+
+    if (
+      ["ETIMEDOUT", "ESOCKET", "ECONNECTION"].includes(error.code) ||
+      error.message?.includes("Timeout")
+    ) {
+      return res.status(504).json({
+        erro:
+          "O servidor de email demorou para responder. Tente novamente em alguns minutos.",
+      });
+    }
+
     res.status(500).json({ erro: "Erro ao enviar email de recuperação." });
   }
 });

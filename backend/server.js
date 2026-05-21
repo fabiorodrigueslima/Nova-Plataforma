@@ -16,7 +16,11 @@ const app = express();
 /* ================= CONFIG ================= */
 
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || "postfan_secret_dev";
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET precisa estar configurado no ambiente.");
+}
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL || "https://postfan-novo.netlify.app";
@@ -40,22 +44,18 @@ if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
 
+function validarOrigem(origin, callback) {
+  if (!origin || allowedOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+
+  console.log("Origem bloqueada pelo CORS:", origin);
+  return callback(new Error("Origem não permitida pelo CORS."));
+}
+
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
-
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.includes("postfan-novo.netlify.app") ||
-        origin.endsWith(".netlify.app")
-      ) {
-        return callback(null, true);
-      }
-
-      console.log("❌ Origem bloqueada pelo CORS:", origin);
-      return callback(null, false);
-    },
+    origin: validarOrigem,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -65,7 +65,7 @@ app.use(
 app.options(
   /.*/,
   cors({
-    origin: true,
+    origin: validarOrigem,
     credentials: true,
   }),
 );
@@ -76,6 +76,22 @@ app.use(express.urlencoded({ extended: true }));
 /* ================= UPLOADS ================= */
 
 const uploadsDir = path.join(__dirname, "uploads");
+const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const allowedUploadTypes = new Map([
+  ["image/jpeg", [".jpg", ".jpeg"]],
+  ["image/png", [".png"]],
+  ["image/webp", [".webp"]],
+  ["image/gif", [".gif"]],
+  ["video/mp4", [".mp4"]],
+  ["video/webm", [".webm"]],
+  ["application/pdf", [".pdf"]],
+  ["text/plain", [".txt"]],
+  ["application/msword", [".doc"]],
+  [
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    [".docx"],
+  ],
+]);
 
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
@@ -89,7 +105,7 @@ const storage = multer.diskStorage({
   },
 
   filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(file.originalname).toLowerCase();
     const nomeArquivo =
       Date.now() + "-" + Math.round(Math.random() * 1e9) + ext;
 
@@ -97,7 +113,23 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: MAX_UPLOAD_SIZE,
+    files: 1,
+  },
+  fileFilter: function (req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = allowedUploadTypes.get(file.mimetype);
+
+    if (!allowedExtensions || !allowedExtensions.includes(ext)) {
+      return cb(new Error("Tipo de arquivo não permitido."));
+    }
+
+    cb(null, true);
+  },
+});
 
 /* ================= BANCO ================= */
 
@@ -253,7 +285,7 @@ function autenticar(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.usuario = decoded;
     next();
-  } catch (error) {
+  } catch {
     return res.status(401).json({ erro: "Token expirado ou inválido." });
   }
 }
@@ -553,7 +585,7 @@ app.get("/me", autenticar, async (req, res) => {
     }
 
     res.json(usuario.rows[0]);
-  } catch (error) {
+  } catch {
     res.status(500).json({ erro: "Erro ao buscar usuário." });
   }
 });
@@ -775,7 +807,12 @@ app.put("/posts/:id", autenticar, async (req, res) => {
       WHERE id = $4
       RETURNING *
       `,
-      [conteudo, tema, sentimento, id],
+      [
+        conteudo ?? post.rows[0].conteudo,
+        tema ?? post.rows[0].tema,
+        sentimento ?? post.rows[0].sentimento,
+        id,
+      ],
     );
 
     res.json({
@@ -1017,7 +1054,7 @@ app.get("/usuarios/:id", autenticar, async (req, res) => {
     }
 
     res.json(usuario.rows[0]);
-  } catch (error) {
+  } catch {
     res.status(500).json({ erro: "Erro ao buscar usuário." });
   }
 });
@@ -1348,7 +1385,7 @@ app.get("/api/grupos/:id", autenticar, async (req, res) => {
     }
 
     res.json(grupo.rows[0]);
-  } catch (error) {
+  } catch {
     res.status(500).json({ erro: "Erro ao buscar grupo." });
   }
 });
@@ -1388,7 +1425,7 @@ app.get("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
     );
 
     res.json(mensagens.rows);
-  } catch (error) {
+  } catch {
     res.status(500).json({ erro: "Erro ao buscar mensagens." });
   }
 });
@@ -1431,7 +1468,7 @@ app.post("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
       mensagem: "Mensagem enviada!",
       dados: nova.rows[0],
     });
-  } catch (error) {
+  } catch {
     res.status(500).json({ erro: "Erro ao enviar mensagem." });
   }
 });
@@ -1463,8 +1500,31 @@ app.delete("/api/grupos/:id", autenticar, async (req, res) => {
   }
 });
 
+app.use((error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    const status = error.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+
+    return res.status(status).json({
+      erro:
+        error.code === "LIMIT_FILE_SIZE"
+          ? "Arquivo maior que o limite de 10MB."
+          : "Erro ao processar arquivo enviado.",
+    });
+  }
+
+  if (error?.message === "Tipo de arquivo não permitido.") {
+    return res.status(400).json({ erro: error.message });
+  }
+
+  next(error);
+});
+
 /* ================= INICIAR SERVIDOR ================= */
 
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor Postfan rodando na porta ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Servidor Postfan rodando na porta ${PORT}`);
+  });
+}
+
+module.exports = app;

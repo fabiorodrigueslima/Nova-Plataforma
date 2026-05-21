@@ -16,6 +16,9 @@ import EditarPerfil from "./pages/EditarPerfil";
 import SalaVirtual from "./pages/SalaVirtual";
 import GrupoChat from "./pages/GrupoChat";
 import Sugestoes from "./pages/Sugestoes";
+import Explorar from "./pages/Explorar";
+import Configuracoes from "./pages/Configuracoes";
+import PrivateRoutes from "./routes/PrivateRoutes";
 
 export default function App() {
   return (
@@ -28,13 +31,18 @@ export default function App() {
       <Route path="/recuperar" element={<Recuperar />} />
       <Route path="/resetar-senha" element={<ResetarSenha />} />
 
-      <Route path="/feed" element={<Feed />} />
-      <Route path="/perfil" element={<Perfil />} />
-      <Route path="/perfil/:id" element={<Perfil />} />
-      <Route path="/editar-perfil" element={<EditarPerfil />} />
-      <Route path="/sala-virtual" element={<SalaVirtual />} />
-      <Route path="/grupo/:id" element={<GrupoChat />} />
-      <Route path="/sugestoes" element={<Sugestoes />} />
+      <Route element={<PrivateRoutes />}>
+        <Route path="/feed" element={<Feed />} />
+        <Route path="/perfil" element={<Perfil />} />
+        <Route path="/perfil/:id" element={<Perfil />} />
+        <Route path="/editar-perfil" element={<EditarPerfil />} />
+        <Route path="/configuracoes" element={<Configuracoes />} />
+        <Route path="/sala-virtual" element={<SalaVirtual />} />
+        <Route path="/grupo/:id" element={<GrupoChat />} />
+        <Route path="/sugestoes" element={<Sugestoes />} />
+        <Route path="/explorar" element={<Explorar />} />
+      </Route>
+
 
       <Route path="/termos" element={<Termos />} />
       <Route path="/privacidade" element={<Privacidade />} />

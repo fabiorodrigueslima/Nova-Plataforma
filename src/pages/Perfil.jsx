@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import api from "../services/api";
 import "../styles/style.css";
 
 export default function Perfil() {
     const { id } = useParams();
     const navigate = useNavigate();
 
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuario"));
+    const usuarioLogado = JSON.parse(localStorage.getItem("usuario") || "null");
     const token = localStorage.getItem("token");
 
     const perfilId = id || usuarioLogado?.id;
@@ -28,61 +29,78 @@ export default function Perfil() {
         try {
             setLoading(true);
 
-            const headers = {
-                Authorization: `Bearer ${token}`,
-            };
-
             const [resUsuario, resStats, resPosts] = await Promise.all([
-                fetch(`http://localhost:5000/usuarios/${perfilId}`, { headers }),
-                fetch(`http://localhost:5000/perfil/stats/${perfilId}`, { headers }),
-                fetch(`http://localhost:5000/usuarios/${perfilId}/posts`, { headers }),
+                api.get(`/usuarios/${perfilId}`),
+                api.get(`/perfil/stats/${perfilId}`),
+                api.get(`/usuarios/${perfilId}/posts`),
             ]);
 
-            const usuarioData = await resUsuario.json();
-            const statsData = await resStats.json();
-            const postsData = await resPosts.json();
+            setPerfil(resUsuario.data);
+            setStats(resStats.data);
 
-            setPerfil(usuarioData);
-            setStats(statsData);
-            setPosts(Array.isArray(postsData) ? postsData : []);
+            setPosts(
+                Array.isArray(resPosts.data)
+                    ? resPosts.data
+                    : []
+            );
+
         } catch (error) {
-            console.error("Erro ao carregar perfil:", error);
+
+            console.error(
+                "Erro ao carregar perfil:",
+                error
+            );
+
+            setPerfil(null);
+
         } finally {
+
             setLoading(false);
         }
     }
 
     async function seguirUsuario() {
         try {
-            const res = await fetch(`http://localhost:5000/seguir/${perfilId}`, {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
 
-            const data = await res.json();
+            const res = await api.post(
+                `/seguir/${perfilId}`
+            );
 
-            if (!res.ok) {
-                alert(data.erro || "Erro ao seguir usuário.");
-                return;
-            }
+            const data = res.data;
 
             setStats((prev) => ({
                 ...prev,
                 seguindo: data.seguindo,
                 total_seguidores: data.seguindo
                     ? Number(prev.total_seguidores) + 1
-                    : Math.max(Number(prev.total_seguidores) - 1, 0),
+                    : Math.max(
+                        Number(prev.total_seguidores) - 1,
+                        0
+                    ),
             }));
+
         } catch (error) {
-            console.error("Erro ao seguir:", error);
+
+            console.error(
+                "Erro ao seguir:",
+                error
+            );
+
+            alert(
+                error.response?.data?.erro ||
+                "Erro ao seguir usuário."
+            );
         }
     }
 
     useEffect(() => {
+        if (!token || !perfilId) {
+            navigate("/login");
+            return;
+        }
+
         carregarPerfil();
-    }, [perfilId]);
+    }, [perfilId, token]);
 
     if (loading) {
         return (
@@ -130,7 +148,10 @@ export default function Perfil() {
                             </div>
 
                             <div className="perfil-actions-pro">
-                                <button onClick={() => navigate("/feed")} className="btn-voltar-pro">
+                                <button
+                                    onClick={() => navigate("/feed")}
+                                    className="btn-voltar-pro"
+                                >
                                     Voltar para o feed
                                 </button>
 
@@ -144,7 +165,11 @@ export default function Perfil() {
                                 ) : (
                                     <button
                                         onClick={seguirUsuario}
-                                        className={stats.seguindo ? "btn-seguindo-pro" : "btn-seguir-pro"}
+                                        className={
+                                            stats.seguindo
+                                                ? "btn-seguindo-pro"
+                                                : "btn-seguir-pro"
+                                        }
                                     >
                                         {stats.seguindo ? "Seguindo" : "Seguir"}
                                     </button>
@@ -194,13 +219,19 @@ export default function Perfil() {
                         <div className="essencia-card-pro">
                             <span>🔥</span>
                             <h3>Meu tema favorito</h3>
-                            <p>{perfil.essencia_tema || "Nenhum tema favorito informado."}</p>
+                            <p>
+                                {perfil.essencia_tema ||
+                                    "Nenhum tema favorito informado."}
+                            </p>
                         </div>
 
                         <div className="essencia-card-pro">
                             <span>🌟</span>
                             <h3>Minha frase</h3>
-                            <p>{perfil.essencia_frase || "Nenhuma frase adicionada ainda."}</p>
+                            <p>
+                                {perfil.essencia_frase ||
+                                    "Nenhuma frase adicionada ainda."}
+                            </p>
                         </div>
 
                         <div className="essencia-card-pro">
@@ -241,19 +272,19 @@ export default function Perfil() {
                                 <div className="perfil-empty-pro">
                                     <span>📭</span>
                                     <h3>Nenhum post publicado ainda</h3>
-                                    <p>Quando este usuário postar, as publicações aparecerão aqui.</p>
+                                    <p>
+                                        Quando este usuário postar, as publicações aparecerão aqui.
+                                    </p>
                                 </div>
                             ) : (
                                 <div className="perfil-posts-grid-pro">
                                     {posts.map((post) => (
                                         <article className="perfil-post-card-pro" key={post.id}>
-
                                             {post.imagem && (
                                                 <img
                                                     src={post.imagem}
                                                     alt="Post"
                                                     onError={(e) => {
-                                                        console.log("Erro ao carregar imagem:", post.imagem);
                                                         e.currentTarget.style.display = "none";
                                                     }}
                                                 />
@@ -288,11 +319,14 @@ export default function Perfil() {
                         <div className="perfil-empty-pro">
                             <span>ℹ️</span>
                             <h3>Sobre o usuário</h3>
-                            <p>{perfil.bio || "Este usuário ainda não adicionou informações."}</p>
+                            <p>
+                                {perfil.bio ||
+                                    "Este usuário ainda não adicionou informações."}
+                            </p>
                         </div>
                     )}
                 </section>
             </section>
-        </main >
+        </main>
     );
 }

@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/style.css";
+import api from "../services/api";
 
 export default function EditarPerfil() {
     const navigate = useNavigate();
 
-    const token = localStorage.getItem("token");
     const usuarioLocal = JSON.parse(localStorage.getItem("usuario"));
 
     const [modalSucesso, setModalSucesso] = useState(false);
@@ -27,13 +27,8 @@ export default function EditarPerfil() {
 
     async function carregarDados() {
         try {
-            const res = await fetch(`http://localhost:5000/usuarios/${usuarioLocal.id}`, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-            });
-
-            const data = await res.json();
+            const res = await api.get("/me");
+            const data = res.data;
 
             setForm({
                 nome: data.nome || "",
@@ -96,20 +91,8 @@ export default function EditarPerfil() {
                 formData.append("foto", foto);
             }
 
-            const res = await fetch("http://localhost:5000/perfil", {
-                method: "PUT",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-                body: formData,
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                alert(data.erro || "Erro ao atualizar perfil.");
-                return;
-            }
+            const res = await api.put("/perfil", formData);
+            const data = res.data;
 
             localStorage.setItem("usuario", JSON.stringify(data.usuario));
 
@@ -120,7 +103,7 @@ export default function EditarPerfil() {
             setModalSucesso(true);
         } catch (error) {
             console.error("Erro ao salvar perfil:", error);
-            alert("Erro ao salvar perfil.");
+            alert(error.response?.data?.erro || "Erro ao salvar perfil.");
         } finally {
             setLoading(false);
         }

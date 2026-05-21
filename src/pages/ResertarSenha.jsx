@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import "../styles/style.css";
 import api from "../services/api";
+import "../styles/style.css";
 
 export default function ResetarSenha() {
     const [searchParams] = useSearchParams();
@@ -42,23 +42,19 @@ export default function ResetarSenha() {
         try {
             setLoading(true);
 
-            const resposta = await api.post("/resetar", {
+            await api.post("/resetar", {
                 token,
                 novaSenha: senha,
             });
-
-            const dados = resposta.data;
-
-            if (!resposta.ok) {
-                setErro(dados.erro || "Erro ao redefinir senha.");
-                return;
-            }
 
             setMensagem("Senha alterada com sucesso. Agora você já pode entrar.");
             setSenha("");
             setConfirmarSenha("");
         } catch (error) {
-            setErro("Erro ao conectar com o servidor.");
+            setErro(
+                error.response?.data?.erro ||
+                "Erro ao conectar com o servidor."
+            );
         } finally {
             setLoading(false);
         }

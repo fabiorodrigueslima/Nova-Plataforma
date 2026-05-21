@@ -7,7 +7,7 @@ export default function FeedCenter({
     posts = [],
     setPosts,
 }) {
-    const usuario = JSON.parse(localStorage.getItem("usuario")) || {};
+    const usuario = JSON.parse(localStorage.getItem("usuario") || "{}");
 
     const [texto, setTexto] = useState("");
     const [tema, setTema] = useState("Geral");
@@ -18,6 +18,7 @@ export default function FeedCenter({
 
     const [comentarioAberto, setComentarioAberto] = useState(null);
     const [novoComentario, setNovoComentario] = useState({});
+    const [comentariosPost, setComentariosPost] = useState({});
     const [editandoId, setEditandoId] = useState(null);
     const [textoEditado, setTextoEditado] = useState("");
     const [loadingPosts, setLoadingPosts] = useState(true);
@@ -28,9 +29,7 @@ export default function FeedCenter({
             setLoadingPosts(true);
 
             const res = await api.get("/posts");
-            const data = res.data;
-
-            setPosts(Array.isArray(data) ? data : []);
+            setPosts(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             console.error("Erro ao carregar posts:", error);
         } finally {
@@ -49,9 +48,13 @@ export default function FeedCenter({
         setArquivo(file);
         setPreview(URL.createObjectURL(file));
 
-        if (file.type.startsWith("image")) setTipoArquivo("imagem");
-        else if (file.type.startsWith("video")) setTipoArquivo("video");
-        else setTipoArquivo("documento");
+        if (file.type.startsWith("image")) {
+            setTipoArquivo("imagem");
+        } else if (file.type.startsWith("video")) {
+            setTipoArquivo("video");
+        } else {
+            setTipoArquivo("documento");
+        }
     }
 
     function removerArquivo() {
@@ -76,7 +79,7 @@ export default function FeedCenter({
             formData.append("sentimento", sentimento);
 
             if (arquivo) {
-                formData.append("arquivo", arquivo);
+                formData.append("imagem", arquivo);
             }
 
             const res = await api.post("/posts", formData);
@@ -103,19 +106,26 @@ export default function FeedCenter({
 
     async function curtirPost(id) {
         try {
-            const res = await api.post(`/posts/${id}/curtir`);
+            const res = await api.post("/curtir", {
+                post_id: id,
+            });
+
             const data = res.data;
 
             setPosts((prev) =>
-                prev.map((post) =>
-                    post.id === id
-                        ? {
-                            ...post,
-                            curtiu: data.curtiu,
-                            total_curtidas: data.total_curtidas,
-                        }
-                        : post
-                )
+                prev.map((post) => {
+                    if (post.id !== id) return post;
+
+                    const totalAtual = Number(post.total_curtidas || 0);
+
+                    return {
+                        ...post,
+                        curtiu: data.curtiu,
+                        total_curtidas: data.curtiu
+                            ? totalAtual + 1
+                            : Math.max(totalAtual - 1, 0),
+                    };
+                })
             );
         } catch (error) {
             console.error("Erro ao curtir post:", error);
@@ -168,7 +178,9 @@ export default function FeedCenter({
                         ? {
                             ...post,
                             ...postAtualizado,
-                            conteudo: postAtualizado.conteudo || textoEditado.trim(),
+                            conteudo:
+                                postAtualizado.conteudo ||
+                                textoEditado.trim(),
                         }
                         : post
                 )
@@ -186,27 +198,49 @@ export default function FeedCenter({
         }
     }
 
+    async function abrirComentarios(id) {
+        if (comentarioAberto === id) {
+            setComentarioAberto(null);
+            return;
+        }
+
+        setComentarioAberto(id);
+
+        try {
+            const res = await api.get(`/comentarios?post_id=${id}`);
+
+            setComentariosPost((prev) => ({
+                ...prev,
+                [id]: Array.isArray(res.data) ? res.data : [],
+            }));
+        } catch (error) {
+            console.error("Erro ao carregar comentários:", error);
+        }
+    }
+
     async function comentar(id) {
         const textoComentario = novoComentario[id];
 
         if (!textoComentario?.trim()) return;
 
         try {
-            const res = await api.post(`/posts/${id}/comentarios`, {
+            const res = await api.post("/comentarios", {
+                post_id: id,
                 conteudo: textoComentario.trim(),
             });
 
             const comentario = res.data.comentario || res.data;
+
+            setComentariosPost((prev) => ({
+                ...prev,
+                [id]: [...(prev[id] || []), comentario],
+            }));
 
             setPosts((prev) =>
                 prev.map((post) =>
                     post.id === id
                         ? {
                             ...post,
-                            comentarios: [
-                                ...(post.comentarios || []),
-                                comentario,
-                            ],
                             total_comentarios:
                                 Number(post.total_comentarios || 0) + 1,
                         }
@@ -214,10 +248,10 @@ export default function FeedCenter({
                 )
             );
 
-            setNovoComentario({
-                ...novoComentario,
+            setNovoComentario((prev) => ({
+                ...prev,
                 [id]: "",
-            });
+            }));
         } catch (error) {
             console.error("Erro ao comentar:", error);
 
@@ -228,7 +262,15 @@ export default function FeedCenter({
         }
     }
 
-    function compartilhar(post) {
+    async function compartilhar(post) {
+        try {
+            await api.post("/compartilhar", {
+                post_id: post.id,
+            });
+        } catch (error) {
+            console.error("Erro ao registrar compartilhamento:", error);
+        }
+
         const textoPost = post.conteudo || post.texto || "";
         const autor = post.autor || post.nome || "Usuário";
 
@@ -285,7 +327,10 @@ export default function FeedCenter({
                             </div>
                         )}
 
-                        <button className="remove-preview" onClick={removerArquivo}>
+                        <button
+                            className="remove-preview"
+                            onClick={removerArquivo}
+                        >
                             Remover
                         </button>
                     </div>
@@ -334,7 +379,10 @@ export default function FeedCenter({
                         <option value="Grato">🙏 Grato</option>
                     </select>
 
-                    <select value={tema} onChange={(e) => setTema(e.target.value)}>
+                    <select
+                        value={tema}
+                        onChange={(e) => setTema(e.target.value)}
+                    >
                         <option>Geral</option>
                         <option>Política</option>
                         <option>Religião</option>
@@ -380,15 +428,30 @@ export default function FeedCenter({
                 ) : (
                     postsFiltrados.map((post) => {
                         const textoPost = post.conteudo || post.texto || "";
-                        const autor = post.autor || post.nome || post.usuario_nome || "Usuário";
-                        const fotoAutor = post.fotoAutor || post.foto || post.usuario_foto || "";
+                        const autor =
+                            post.autor ||
+                            post.nome ||
+                            post.usuario_nome ||
+                            "Usuário";
+
+                        const fotoAutor =
+                            post.fotoAutor ||
+                            post.foto ||
+                            post.usuario_foto ||
+                            "";
+
                         const imagemPost = post.imagem || post.arquivoUrl || "";
+
                         const criadoEm = post.criado_em
                             ? new Date(post.criado_em).toLocaleString("pt-BR")
                             : post.criadoEm || "";
 
                         const donoPost =
-                            Number(post.usuario_id || post.usuarioId) === Number(usuario?.id);
+                            Number(post.usuario_id || post.usuarioId) ===
+                            Number(usuario?.id);
+
+                        const comentarios =
+                            comentariosPost[post.id] || post.comentarios || [];
 
                         return (
                             <article className="feed-post" key={post.id}>
@@ -408,11 +471,19 @@ export default function FeedCenter({
 
                                     {donoPost && (
                                         <div className="post-menu">
-                                            <button onClick={() => iniciarEdicao(post)}>
+                                            <button
+                                                onClick={() =>
+                                                    iniciarEdicao(post)
+                                                }
+                                            >
                                                 ✏️
                                             </button>
 
-                                            <button onClick={() => excluirPost(post.id)}>
+                                            <button
+                                                onClick={() =>
+                                                    excluirPost(post.id)
+                                                }
+                                            >
                                                 🗑️
                                             </button>
                                         </div>
@@ -420,7 +491,9 @@ export default function FeedCenter({
                                 </div>
 
                                 {post.tema && (
-                                    <span className="post-theme">#{post.tema}</span>
+                                    <span className="post-theme">
+                                        #{post.tema}
+                                    </span>
                                 )}
 
                                 {post.sentimento && (
@@ -433,15 +506,25 @@ export default function FeedCenter({
                                     <div className="edit-box">
                                         <textarea
                                             value={textoEditado}
-                                            onChange={(e) => setTextoEditado(e.target.value)}
+                                            onChange={(e) =>
+                                                setTextoEditado(e.target.value)
+                                            }
                                         />
 
                                         <div>
-                                            <button onClick={() => salvarEdicao(post.id)}>
+                                            <button
+                                                onClick={() =>
+                                                    salvarEdicao(post.id)
+                                                }
+                                            >
                                                 Salvar
                                             </button>
 
-                                            <button onClick={() => setEditandoId(null)}>
+                                            <button
+                                                onClick={() =>
+                                                    setEditandoId(null)
+                                                }
+                                            >
                                                 Cancelar
                                             </button>
                                         </div>
@@ -456,7 +539,8 @@ export default function FeedCenter({
                                         src={imagemPost}
                                         alt="Post"
                                         onError={(e) => {
-                                            e.currentTarget.style.display = "none";
+                                            e.currentTarget.style.display =
+                                                "none";
                                         }}
                                     />
                                 )}
@@ -466,32 +550,32 @@ export default function FeedCenter({
                                         className={post.curtiu ? "liked" : ""}
                                         onClick={() => curtirPost(post.id)}
                                     >
-                                        ❤️ {post.total_curtidas || post.likes || 0}
+                                        ❤️ {post.total_curtidas || 0}
                                     </button>
 
                                     <button
                                         onClick={() =>
-                                            setComentarioAberto(
-                                                comentarioAberto === post.id ? null : post.id
-                                            )
+                                            abrirComentarios(post.id)
                                         }
                                     >
-                                        💬 {post.total_comentarios || post.comentarios?.length || 0}
+                                        💬 {post.total_comentarios || 0}
                                     </button>
 
-                                    <button onClick={() => compartilhar(post)}>
+                                    <button
+                                        onClick={() => compartilhar(post)}
+                                    >
                                         🔗 Compartilhar
                                     </button>
                                 </div>
 
                                 {comentarioAberto === post.id && (
                                     <div className="comments-box">
-                                        {(post.comentarios || []).length === 0 ? (
+                                        {comentarios.length === 0 ? (
                                             <p className="no-comments">
                                                 Nenhum comentário ainda.
                                             </p>
                                         ) : (
-                                            post.comentarios.map((comentario) => (
+                                            comentarios.map((comentario) => (
                                                 <div
                                                     className="comment-item"
                                                     key={comentario.id}
@@ -511,7 +595,9 @@ export default function FeedCenter({
                                                         {comentario.criado_em
                                                             ? new Date(
                                                                 comentario.criado_em
-                                                            ).toLocaleString("pt-BR")
+                                                            ).toLocaleString(
+                                                                "pt-BR"
+                                                            )
                                                             : comentario.criadoEm ||
                                                             "Agora mesmo"}
                                                     </span>
@@ -523,16 +609,24 @@ export default function FeedCenter({
                                             <input
                                                 type="text"
                                                 placeholder="Escreva um comentário..."
-                                                value={novoComentario[post.id] || ""}
+                                                value={
+                                                    novoComentario[post.id] ||
+                                                    ""
+                                                }
                                                 onChange={(e) =>
                                                     setNovoComentario({
                                                         ...novoComentario,
-                                                        [post.id]: e.target.value,
+                                                        [post.id]:
+                                                            e.target.value,
                                                     })
                                                 }
                                             />
 
-                                            <button onClick={() => comentar(post.id)}>
+                                            <button
+                                                onClick={() =>
+                                                    comentar(post.id)
+                                                }
+                                            >
                                                 Enviar
                                             </button>
                                         </div>

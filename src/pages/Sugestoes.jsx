@@ -1,60 +1,43 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import "../styles/style.css";
 import api from "../services/api";
+import "../styles/style.css";
 
 export default function Sugestoes() {
     const navigate = useNavigate();
-    const token = localStorage.getItem("token");
 
     const [usuarios, setUsuarios] = useState([]);
     const [loading, setLoading] = useState(true);
 
     async function carregarSugestoes() {
-
         try {
-
             const res = await api.get("/usuarios/sugestoes");
 
-            const data = res.data;
-
-            setUsuarios(
-                Array.isArray(data) ? data : []
-            );
-
+            setUsuarios(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
-
-            console.error(
-                "Erro ao buscar sugestões:",
-                error
-            );
-
+            console.error("Erro ao buscar sugestões:", error);
         } finally {
-
             setLoading(false);
         }
     }
+
     async function seguirUsuario(id) {
-
         try {
-
             const res = await api.post(`/seguir/${id}`);
 
             const data = res.data;
 
             setUsuarios((prev) =>
                 prev.map((user) =>
-                    user.id === id
+                    Number(user.id) === Number(id)
                         ? {
                             ...user,
-                            seguindo: data.seguindo
+                            seguindo: data.seguindo,
                         }
                         : user
                 )
             );
-
         } catch (error) {
-
             console.error("Erro ao seguir:", error);
 
             alert(
@@ -63,6 +46,7 @@ export default function Sugestoes() {
             );
         }
     }
+
     useEffect(() => {
         carregarSugestoes();
     }, []);
@@ -70,13 +54,18 @@ export default function Sugestoes() {
     return (
         <main className="sugestoes-page">
             <section className="sugestoes-container">
-                <button className="sugestoes-voltar" onClick={() => navigate("/feed")}>
+                <button
+                    className="sugestoes-voltar"
+                    onClick={() => navigate("/feed")}
+                >
                     ← Voltar para o feed
                 </button>
 
                 <div className="sugestoes-header">
                     <h1>Quem seguir</h1>
-                    <p>Conheça pessoas cadastradas no Postfan e comece novas conexões.</p>
+                    <p>
+                        Conheça pessoas cadastradas no Postfan e comece novas conexões.
+                    </p>
                 </div>
 
                 {loading ? (
@@ -101,11 +90,14 @@ export default function Sugestoes() {
                                 <p>@{user.email}</p>
 
                                 <small>
-                                    {user.bio || "Este usuário ainda não adicionou uma bio."}
+                                    {user.bio ||
+                                        "Este usuário ainda não adicionou uma bio."}
                                 </small>
 
                                 <div className="sugestao-actions">
-                                    <button onClick={() => navigate(`/perfil/${user.id}`)}>
+                                    <button
+                                        onClick={() => navigate(`/perfil/${user.id}`)}
+                                    >
                                         Ver perfil
                                     </button>
 

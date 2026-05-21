@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaEye, FaEyeSlash } from "react-icons/fa";
-import imagem3 from "../assets/img/imagem3.png";
-import "../styles/style.css";
+
 import api from "../services/api";
+
+import imagem3 from "../assets/img/imagem3.png";
+
+import "../styles/style.css";
 
 export default function Login() {
     const navigate = useNavigate();
@@ -14,7 +17,9 @@ export default function Login() {
     });
 
     const [mostrarSenha, setMostrarSenha] = useState(false);
+
     const [erro, setErro] = useState("");
+
     const [loading, setLoading] = useState(false);
 
     function handleChange(e) {
@@ -34,9 +39,8 @@ export default function Login() {
             return;
         }
 
-        setLoading(true);
-
         try {
+            setLoading(true);
 
             const res = await api.post("/login", form);
 
@@ -46,37 +50,60 @@ export default function Login() {
                 localStorage.setItem("token", data.token);
             }
 
-            localStorage.setItem(
-                "usuario",
-                JSON.stringify(data.usuario)
-            );
+            if (data.usuario) {
+                localStorage.setItem(
+                    "usuario",
+                    JSON.stringify(data.usuario)
+                );
+            }
 
             navigate("/feed");
 
         } catch (error) {
 
+            console.error(
+                "Erro ao fazer login:",
+                error
+            );
+
             setErro(
                 error.response?.data?.erro ||
                 "Email ou senha inválidos."
             );
-        }
 
-        setLoading(false);
+        } finally {
+
+            setLoading(false);
+        }
     }
 
     return (
         <main className="login-page">
+
+            {/* ================= LEFT ================= */}
+
             <section className="login-left">
+
                 <div className="login-brand">
-                    <div className="login-logo">P</div>
+
+                    <div className="login-logo">
+                        P
+                    </div>
+
                     <h1>POSTFAN</h1>
+
                 </div>
 
-                <img src={imagem3} alt="Postfan" className="login-image" />
+                <img
+                    src={imagem3}
+                    alt="Postfan"
+                    className="login-image"
+                />
 
                 <div className="login-overlay"></div>
 
                 <div className="login-left-content">
+
                     <h2>
                         Bem-vindo ao
                         <br />
@@ -87,11 +114,20 @@ export default function Login() {
                         Entre, participe de debates e compartilhe
                         suas ideias com o mundo.
                     </p>
+
                 </div>
+
             </section>
 
+            {/* ================= RIGHT ================= */}
+
             <section className="login-right">
-                <form className="login-card" onSubmit={handleLogin}>
+
+                <form
+                    className="login-card"
+                    onSubmit={handleLogin}
+                >
+
                     <h2>Entrar</h2>
 
                     <p className="login-subtitle">
@@ -111,6 +147,7 @@ export default function Login() {
                     <label>Senha</label>
 
                     <div className="login-password">
+
                         <input
                             name="senha"
                             type={mostrarSenha ? "text" : "password"}
@@ -121,48 +158,115 @@ export default function Login() {
 
                         <button
                             type="button"
-                            onClick={() => setMostrarSenha(!mostrarSenha)}
+                            onClick={() =>
+                                setMostrarSenha(!mostrarSenha)
+                            }
                         >
-                            {mostrarSenha ? <FaEyeSlash /> : <FaEye />}
+                            {mostrarSenha
+                                ? <FaEyeSlash />
+                                : <FaEye />}
                         </button>
+
                     </div>
 
                     <div className="forgot-password">
-                        <span onClick={() => navigate("/recuperar")}>
+
+                        <span
+                            onClick={() =>
+                                navigate("/recuperar")
+                            }
+                        >
                             Esqueci minha senha
                         </span>
+
                     </div>
 
-                    {erro && <div className="erro-msg">{erro}</div>}
+                    {erro && (
+                        <div className="erro-msg">
+                            {erro}
+                        </div>
+                    )}
 
-                    <button className="login-submit" disabled={loading}>
-                        {loading ? "Entrando..." : "Entrar"}
+                    <button
+                        className="login-submit"
+                        disabled={loading}
+                    >
+
+                        {loading
+                            ? "Entrando..."
+                            : "Entrar"}
+
                     </button>
 
                     <div className="login-divider">
                         <span>ou</span>
                     </div>
 
-                    <button type="button" className="login-google">
+                    <button
+                        type="button"
+                        className="login-google"
+                    >
+
                         <FaGoogle />
+
                         Fazer login com o Google
+
                     </button>
 
                     <p className="login-create">
+
                         Não tem conta?
-                        <span onClick={() => navigate("/cadastro")}>
+
+                        <span
+                            onClick={() =>
+                                navigate("/cadastro")
+                            }
+                        >
                             Criar conta
                         </span>
+
                     </p>
 
                     <div className="login-footer-links">
-                        <span onClick={() => navigate("/termos")}>Termos</span>
-                        <span onClick={() => navigate("/privacidade")}>Privacidade</span>
-                        <span onClick={() => navigate("/cookies")}>Cookies</span>
-                        <span onClick={() => navigate("/ajuda")}>Ajuda</span>
+
+                        <span
+                            onClick={() =>
+                                navigate("/termos")
+                            }
+                        >
+                            Termos
+                        </span>
+
+                        <span
+                            onClick={() =>
+                                navigate("/privacidade")
+                            }
+                        >
+                            Privacidade
+                        </span>
+
+                        <span
+                            onClick={() =>
+                                navigate("/cookies")
+                            }
+                        >
+                            Cookies
+                        </span>
+
+                        <span
+                            onClick={() =>
+                                navigate("/ajuda")
+                            }
+                        >
+                            Ajuda
+                        </span>
+
                     </div>
+
                 </form>
+
             </section>
+
         </main>
     );
 }

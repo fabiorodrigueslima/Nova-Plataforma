@@ -1,7 +1,9 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "https://postfan-backend.onrender.com",
+  baseURL:
+    import.meta.env.VITE_API_URL ||
+    (import.meta.env.PROD ? "/api" : "http://localhost:5000"),
 });
 
 api.interceptors.request.use((config) => {

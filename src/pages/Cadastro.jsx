@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaImage, FaEye, FaEyeSlash } from "react-icons/fa";
 import imagem3 from "../assets/img/imagem3.png";
@@ -6,271 +6,263 @@ import "../styles/style.css";
 import api from "../services/api";
 
 export default function Cadastro() {
-    const navigate = useNavigate();
+  const navigate = useNavigate();
 
-    const [form, setForm] = useState({
-        nome: "",
-        email: "",
-        data_nascimento: "",
-        senha: "",
+  const [form, setForm] = useState({
+    nome: "",
+    email: "",
+    data_nascimento: "",
+    senha: "",
+  });
+
+  const [fotoPreview, setFotoPreview] = useState("");
+  const [fotoFile, setFotoFile] = useState(null);
+  const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [aceitouTermos, setAceitouTermos] = useState(false);
+  const [maiorIdade, setMaiorIdade] = useState(false);
+  const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  function handleChange(e) {
+    setForm({
+      ...form,
+      [e.target.name]: e.target.value,
     });
+  }
 
-    const [mostrarSenha, setMostrarSenha] = useState(false);
-    const [aceitouTermos, setAceitouTermos] = useState(false);
-    const [maiorIdade, setMaiorIdade] = useState(false);
-    const [erro, setErro] = useState("");
-    const [loading, setLoading] = useState(false);
+  function handleFoto(e) {
+    const arquivo = e.target.files[0];
 
-    function handleChange(e) {
-        setForm({
-            ...form,
-            [e.target.name]: e.target.value,
-        });
+    if (!arquivo) {
+      setFotoFile(null);
+      setFotoPreview("");
+      return;
     }
 
-    function handleFoto(e) {
-        const arquivo = e.target.files[0];
+    setFotoFile(arquivo);
+    setFotoPreview(URL.createObjectURL(arquivo));
+  }
 
-        if (!arquivo) return;
+  async function handleCadastro(e) {
+    e.preventDefault();
 
-        const preview = URL.createObjectURL(arquivo);
+    setErro("");
 
-        setForm({
-            ...form,
-            foto: preview,
-        });
+    if (!form.nome || !form.email || !form.data_nascimento || !form.senha) {
+      setErro("Preencha todos os campos obrigatórios.");
+      return;
     }
 
-    async function handleCadastro(e) {
-
-        e.preventDefault();
-
-        setErro("");
-
-        if (!form.nome || !form.email || !form.data_nascimento || !form.senha) {
-            setErro("Preencha todos os campos obrigatórios.");
-            return;
-        }
-
-        if (!maiorIdade) {
-            setErro("Confirme que possui 18 anos ou mais.");
-            return;
-        }
-
-        if (!aceitouTermos) {
-            setErro("Aceite os termos para continuar.");
-            return;
-        }
-
-        setLoading(true);
-
-        try {
-
-            const res = await api.post("/cadastro", form);
-
-            const data = res.data;
-
-            if (data.token) {
-                localStorage.setItem("token", data.token);
-            }
-
-            localStorage.setItem(
-                "usuario",
-                JSON.stringify(data.usuario)
-            );
-
-            navigate("/feed");
-
-        } catch (error) {
-
-            setErro(
-                error.response?.data?.erro ||
-                "Erro ao criar conta."
-            );
-        }
-
-        setLoading(false);
+    if (!maiorIdade) {
+      setErro("Confirme que possui 18 anos ou mais.");
+      return;
     }
-    return (
-        <main className="auth-page">
-            <section className="auth-left">
-                <div className="auth-top-content">
-                    <div className="auth-logo-box">
-                        <div className="logo-icon">P</div>
-                        <h1>POSTFAN</h1>
-                    </div>
 
-                    <h2>
-                        A sua voz,
-                        <br />
-                        <span>o seu mundo.</span>
-                    </h2>
+    if (!aceitouTermos) {
+      setErro("Aceite os termos para continuar.");
+      return;
+    }
 
-                    <p>
-                        Participe das discussões mais quentes,
-                        compartilhe sua perspectiva e conecte-se
-                        com pessoas que pensam como você.
-                    </p>
+    setLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("nome", form.nome);
+      formData.append("email", form.email);
+      formData.append("senha", form.senha);
+      formData.append("data_nascimento", form.data_nascimento);
+
+      if (fotoFile) {
+        formData.append("foto", fotoFile);
+      }
+
+      const res = await api.post("/cadastro", formData);
+      const data = res.data;
+
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      }
+
+      localStorage.setItem("usuario", JSON.stringify(data.usuario));
+      navigate("/feed");
+    } catch (error) {
+      setErro(error.response?.data?.erro || "Erro ao criar conta.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-left">
+        <div className="auth-top-content">
+          <div className="auth-logo-box">
+            <div className="logo-icon">P</div>
+            <h1>POSTFAN</h1>
+          </div>
+
+          <h2>
+            A sua voz,
+            <br />
+            <span>o seu mundo.</span>
+          </h2>
+
+          <p>
+            Participe das discussões mais quentes,
+            compartilhe sua perspectiva e conecte-se
+            com pessoas que pensam como você.
+          </p>
+        </div>
+
+        <div className="auth-image-wrapper">
+          <img src={imagem3} alt="Postfan" className="auth-image" />
+
+          <div className="auth-overlay"></div>
+
+          <div className="chat-real chat-left">
+            <span>💬</span>
+            <p>Que ideia incrível!</p>
+          </div>
+
+          <div className="chat-real chat-heart">❤️</div>
+
+          <div className="chat-real chat-right chat-small">
+            MEU DEUS! Isso é real?
+          </div>
+
+          <div className="chat-real chat-right chat-main">
+            🔥 MEU DEUS! Isso é real?
+          </div>
+
+          <div className="chat-real chat-right chat-muted">
+            Não acredito no que tô vendo!
+          </div>
+        </div>
+      </section>
+
+      <section className="auth-right">
+        <form className="auth-card" onSubmit={handleCadastro}>
+          <h2>Criar Conta</h2>
+
+          <p className="auth-subtitle">
+            É grátis e leva menos de 1 minuto
+          </p>
+
+          <button type="button" className="google-btn">
+            <FaGoogle />
+            Inscrever-se no Google
+          </button>
+
+          <div className="divider">
+            <span>ou preencha os dados abaixo</span>
+          </div>
+
+          <div className="foto-upload">
+            <label htmlFor="foto" className="foto-label">
+              {fotoPreview ? (
+                <img src={fotoPreview} alt="preview" />
+              ) : (
+                <div className="foto-placeholder">
+                  <div className="foto-icon">
+                    <FaImage />
+                  </div>
+                  <h4>Adicionar foto</h4>
+                  <p>Opcional</p>
                 </div>
+              )}
+            </label>
 
-                <div className="auth-image-wrapper">
-                    <img src={imagem3} alt="Postfan" className="auth-image" />
+            <input
+              id="foto"
+              type="file"
+              accept="image/*"
+              onChange={handleFoto}
+            />
+          </div>
 
-                    <div className="auth-overlay"></div>
+          <label>Nome completo</label>
+          <input
+            name="nome"
+            type="text"
+            placeholder="Ex: Maria Silva"
+            value={form.nome}
+            onChange={handleChange}
+          />
 
-                    <div className="chat-real chat-left">
-                        <span>💬</span>
-                        <p>Que ideia incrível!</p>
-                    </div>
+          <label>E-mail</label>
+          <input
+            name="email"
+            type="email"
+            placeholder="seu@email.com"
+            value={form.email}
+            onChange={handleChange}
+          />
 
-                    <div className="chat-real chat-heart">❤️</div>
+          <label>Data de nascimento</label>
+          <input
+            name="data_nascimento"
+            type="date"
+            value={form.data_nascimento}
+            onChange={handleChange}
+          />
 
-                    <div className="chat-real chat-right chat-small">
-                        MEU DEUS! Isso é real?
-                    </div>
+          <label>Senha</label>
+          <div className="password-field">
+            <input
+              name="senha"
+              type={mostrarSenha ? "text" : "password"}
+              placeholder="Mín. 8 caracteres"
+              value={form.senha}
+              onChange={handleChange}
+            />
 
-                    <div className="chat-real chat-right chat-main">
-                        🔥 MEU DEUS! Isso é real?
-                    </div>
+            <button type="button" onClick={() => setMostrarSenha(!mostrarSenha)}>
+              {mostrarSenha ? <FaEyeSlash /> : <FaEye />}
+            </button>
+          </div>
 
-                    <div className="chat-real chat-right chat-muted">
-                        Não acredito no que tô vendo!
-                    </div>
-                </div>
-            </section>
+          <label className="check-line">
+            <input
+              type="checkbox"
+              checked={maiorIdade}
+              onChange={(e) => setMaiorIdade(e.target.checked)}
+            />
+            Confirmo que tenho 18 anos ou mais.
+          </label>
 
-            <section className="auth-right">
-                <form className="auth-card" onSubmit={handleCadastro}>
-                    <h2>Criar Conta</h2>
+          <label className="check-line">
+            <input
+              type="checkbox"
+              checked={aceitouTermos}
+              onChange={(e) => setAceitouTermos(e.target.checked)}
+            />
+            Aceito os termos de uso e privacidade.
+          </label>
 
-                    <p className="auth-subtitle">
-                        É grátis e leva menos de 1 minuto
-                    </p>
+          {erro && <div className="erro-msg">{erro}</div>}
 
-                    <button type="button" className="google-btn">
-                        <FaGoogle />
-                        Inscrever-se no Google
-                    </button>
+          <button className="auth-submit" disabled={loading}>
+            {loading ? "Criando conta..." : "Criar Minha Conta Grátis"}
+          </button>
 
-                    <div className="divider">
-                        <span>ou preencha os dados abaixo</span>
-                    </div>
+          <p className="auth-link">
+            Já tem conta?
+            <span onClick={() => navigate("/login")}>Entrar agora</span>
+          </p>
 
-                    <div className="foto-upload">
-                        <label htmlFor="foto" className="foto-label">
-                            {form.foto ? (
-                                <img src={form.foto} alt="preview" />
-                            ) : (
-                                <div className="foto-placeholder">
-                                    <div className="foto-icon">
-                                        <FaImage />
-                                    </div>
-                                    <h4>Adicionar foto</h4>
-                                    <p>Opcional</p>
-                                </div>
-                            )}
-                        </label>
+          <div className="auth-footer-links">
+            <span onClick={() => navigate("/termos")}>Termos</span>
+            <span onClick={() => navigate("/privacidade")}>Privacidade</span>
+            <span onClick={() => navigate("/cookies")}>Cookies</span>
+            <span onClick={() => navigate("/seguranca")}>Segurança</span>
+            <span onClick={() => navigate("/ajuda")}>Ajuda</span>
+          </div>
 
-                        <input
-                            id="foto"
-                            type="file"
-                            accept="image/*"
-                            onChange={handleFoto}
-                        />
-                    </div>
-
-                    <label>Nome completo</label>
-
-                    <input
-                        name="nome"
-                        type="text"
-                        placeholder="Ex: Maria Silva"
-                        value={form.nome}
-                        onChange={handleChange}
-                    />
-
-                    <label>E-mail</label>
-
-                    <input
-                        name="email"
-                        type="email"
-                        placeholder="seu@email.com"
-                        value={form.email}
-                        onChange={handleChange}
-                    />
-
-                    <label>Data de nascimento</label>
-
-                    <input
-                        name="data_nascimento"
-                        type="date"
-                        value={form.data_nascimento}
-                        onChange={handleChange}
-                    />
-
-                    <label>Senha</label>
-
-                    <div className="password-field">
-                        <input
-                            name="senha"
-                            type={mostrarSenha ? "text" : "password"}
-                            placeholder="Mín. 8 caracteres"
-                            value={form.senha}
-                            onChange={handleChange}
-                        />
-
-                        <button
-                            type="button"
-                            onClick={() => setMostrarSenha(!mostrarSenha)}
-                        >
-                            {mostrarSenha ? <FaEyeSlash /> : <FaEye />}
-                        </button>
-                    </div>
-
-                    <label className="check-line">
-                        <input
-                            type="checkbox"
-                            checked={maiorIdade}
-                            onChange={(e) => setMaiorIdade(e.target.checked)}
-                        />
-                        Confirmo que tenho 18 anos ou mais.
-                    </label>
-
-                    <label className="check-line">
-                        <input
-                            type="checkbox"
-                            checked={aceitouTermos}
-                            onChange={(e) => setAceitouTermos(e.target.checked)}
-                        />
-                        Aceito os termos de uso e privacidade.
-                    </label>
-
-                    {erro && <div className="erro-msg">{erro}</div>}
-
-                    <button className="auth-submit" disabled={loading}>
-                        {loading ? "Criando conta..." : "Criar Minha Conta Grátis"}
-                    </button>
-
-                    <p className="auth-link">
-                        Já tem conta?
-                        <span onClick={() => navigate("/login")}>
-                            Entrar agora
-                        </span>
-                    </p>
-
-                    <div className="auth-footer-links">
-                        <span onClick={() => navigate("/termos")}>Termos</span>
-                        <span onClick={() => navigate("/privacidade")}>Privacidade</span>
-                        <span onClick={() => navigate("/cookies")}>Cookies</span>
-                        <span onClick={() => navigate("/seguranca")}>Segurança</span>
-                        <span onClick={() => navigate("/ajuda")}>Ajuda</span>
-                    </div>
-
-                    <footer className="auth-footer">
-                        © 2026 Postfan. Todos os direitos reservados.
-                    </footer>
-                </form>
-            </section>
-        </main>
-    );
+          <footer className="auth-footer">
+            © 2026 Postfan. Todos os direitos reservados.
+          </footer>
+        </form>
+      </section>
+    </main>
+  );
 }

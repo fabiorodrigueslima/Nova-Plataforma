@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../services/api";
 import "../styles/style.css";
 
 export default function SalaVirtual() {
     const navigate = useNavigate();
-    const token = localStorage.getItem("token");
 
     const [aba, setAba] = useState("meus");
     const [meusGrupos, setMeusGrupos] = useState([]);
@@ -28,12 +28,8 @@ export default function SalaVirtual() {
 
     async function carregarMeusGrupos() {
         try {
-            const res = await fetch("http://localhost:5000/api/meus-grupos", {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            const data = await res.json();
-            setMeusGrupos(Array.isArray(data) ? data : []);
+            const res = await api.get("/api/meus-grupos");
+            setMeusGrupos(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             console.error("Erro ao carregar meus grupos:", error);
         }
@@ -41,12 +37,8 @@ export default function SalaVirtual() {
 
     async function carregarGrupos() {
         try {
-            const res = await fetch("http://localhost:5000/api/grupos", {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            const data = await res.json();
-            setGrupos(Array.isArray(data) ? data : []);
+            const res = await api.get("/api/grupos");
+            setGrupos(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             console.error("Erro ao carregar grupos:", error);
         }
@@ -96,6 +88,7 @@ export default function SalaVirtual() {
 
     function copiarCodigo(codigoCopiar) {
         navigator.clipboard.writeText(codigoCopiar);
+
         abrirModalSucesso(
             "Código copiado!",
             "Agora você pode enviar esse código para os usuários convidados."
@@ -106,24 +99,7 @@ export default function SalaVirtual() {
         e.preventDefault();
 
         try {
-            const res = await fetch("http://localhost:5000/api/grupos", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify(form),
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                abrirModalSucesso(
-                    "Não foi possível criar o grupo",
-                    data.erro || "Verifique as informações e tente novamente."
-                );
-                return;
-            }
+            const res = await api.post("/api/grupos", form);
 
             setForm({
                 nome: "",
@@ -132,19 +108,21 @@ export default function SalaVirtual() {
             });
 
             setAba("meus");
-            carregarMeusGrupos();
-            carregarGrupos();
+
+            await carregarMeusGrupos();
+            await carregarGrupos();
 
             abrirModalSucesso(
                 "Grupo criado com sucesso!",
                 "Seu grupo foi criado. Compartilhe o código abaixo apenas com as pessoas que você deseja convidar.",
-                data.grupo.codigo_convite
+                res.data.grupo?.codigo_convite
             );
         } catch (error) {
             console.error("Erro ao criar grupo:", error);
 
             abrirModalSucesso(
                 "Erro ao criar grupo",
+                error.response?.data?.erro ||
                 "Aconteceu um problema ao criar o grupo. Tente novamente."
             );
         }
@@ -154,39 +132,26 @@ export default function SalaVirtual() {
         e.preventDefault();
 
         try {
-            const res = await fetch("http://localhost:5000/api/grupos/entrar", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${token}`,
-                },
-                body: JSON.stringify({ codigo }),
+            const res = await api.post("/api/grupos/entrar", {
+                codigo,
             });
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                abrirModalSucesso(
-                    "Código inválido",
-                    data.erro || "Confira o código enviado pelo administrador."
-                );
-                return;
-            }
-
             setCodigo("");
-            carregarMeusGrupos();
+
+            await carregarMeusGrupos();
 
             abrirModalSucesso(
                 "Entrada liberada!",
                 "Você entrou no grupo com sucesso. Agora pode participar da conversa.",
                 "",
-                data.grupo?.id
+                res.data.grupo?.id
             );
         } catch (error) {
             console.error("Erro ao entrar no grupo:", error);
 
             abrirModalSucesso(
                 "Erro ao entrar no grupo",
+                error.response?.data?.erro ||
                 "Aconteceu um problema ao tentar entrar no grupo."
             );
         }
@@ -196,35 +161,23 @@ export default function SalaVirtual() {
         if (!grupoExcluir) return;
 
         try {
-            const res = await fetch(`http://localhost:5000/api/grupos/${grupoExcluir.id}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                abrirModalSucesso(
-                    "Não foi possível excluir",
-                    data.erro || "Apenas o administrador pode excluir este grupo."
-                );
-                return;
-            }
+            await api.delete(`/api/grupos/${grupoExcluir.id}`);
 
             fecharModalExcluir();
 
-            carregarMeusGrupos();
-            carregarGrupos();
+            await carregarMeusGrupos();
+            await carregarGrupos();
 
             abrirModalSucesso(
                 "Grupo excluído com sucesso!",
-                "O grupo, os membros e todas as mensagens foram removidos permanentemente."
+                "O grupo, os membros e todas as mensagens foram removidas permanentemente."
             );
         } catch (error) {
             console.error("Erro ao excluir grupo:", error);
 
             abrirModalSucesso(
                 "Erro ao excluir grupo",
+                error.response?.data?.erro ||
                 "Aconteceu um problema ao excluir o grupo. Tente novamente."
             );
         }
@@ -239,7 +192,9 @@ export default function SalaVirtual() {
 
                 <h1>Sala Virtual</h1>
 
-                <p>Crie grupos, converse e se conecte com a comunidade em tempo real.</p>
+                <p>
+                    Crie grupos, converse e se conecte com a comunidade em tempo real.
+                </p>
 
                 <p>
                     A Sala Virtual é um espaço para estudos, debates, amizades,
@@ -271,23 +226,38 @@ export default function SalaVirtual() {
 
             <section className="sala-container">
                 <div className="sala-tabs">
-                    <button className={aba === "meus" ? "active" : ""} onClick={() => setAba("meus")}>
+                    <button
+                        className={aba === "meus" ? "active" : ""}
+                        onClick={() => setAba("meus")}
+                    >
                         Meus Grupos
                     </button>
 
-                    <button className={aba === "explorar" ? "active" : ""} onClick={() => setAba("explorar")}>
+                    <button
+                        className={aba === "explorar" ? "active" : ""}
+                        onClick={() => setAba("explorar")}
+                    >
                         Explorar Grupos
                     </button>
 
-                    <button className={aba === "criar" ? "active" : ""} onClick={() => setAba("criar")}>
+                    <button
+                        className={aba === "criar" ? "active" : ""}
+                        onClick={() => setAba("criar")}
+                    >
                         Criar Grupo
                     </button>
 
-                    <button className={aba === "entrar" ? "active" : ""} onClick={() => setAba("entrar")}>
+                    <button
+                        className={aba === "entrar" ? "active" : ""}
+                        onClick={() => setAba("entrar")}
+                    >
                         Entrar com Código
                     </button>
 
-                    <button className={aba === "reservada" ? "active" : ""} onClick={() => setAba("reservada")}>
+                    <button
+                        className={aba === "reservada" ? "active" : ""}
+                        onClick={() => setAba("reservada")}
+                    >
                         Sala Reservada
                     </button>
                 </div>
@@ -297,7 +267,10 @@ export default function SalaVirtual() {
                         <div className="sala-box-top">
                             <h2>Meus Grupos</h2>
 
-                            <button className="novo-grupo-btn" onClick={() => setAba("criar")}>
+                            <button
+                                className="novo-grupo-btn"
+                                onClick={() => setAba("criar")}
+                            >
                                 + Criar Grupo
                             </button>
                         </div>
@@ -327,7 +300,9 @@ export default function SalaVirtual() {
                                                 <button
                                                     type="button"
                                                     className="btn-copiar-codigo"
-                                                    onClick={() => copiarCodigo(grupo.codigo_convite)}
+                                                    onClick={() =>
+                                                        copiarCodigo(grupo.codigo_convite)
+                                                    }
                                                 >
                                                     Copiar
                                                 </button>
@@ -335,7 +310,9 @@ export default function SalaVirtual() {
                                         )}
 
                                         <div className="grupo-actions">
-                                            <button onClick={() => navigate(`/grupo/${grupo.id}`)}>
+                                            <button
+                                                onClick={() => navigate(`/grupo/${grupo.id}`)}
+                                            >
                                                 Acessar
                                             </button>
 
@@ -470,11 +447,17 @@ export default function SalaVirtual() {
                         </p>
 
                         <div className="sala-reservada-actions">
-                            <button className="sala-reservada-btn" onClick={() => setAba("criar")}>
+                            <button
+                                className="sala-reservada-btn"
+                                onClick={() => setAba("criar")}
+                            >
                                 Criar Sala Reservada
                             </button>
 
-                            <button className="sala-reservada-btn secundario" onClick={() => setAba("entrar")}>
+                            <button
+                                className="sala-reservada-btn secundario"
+                                onClick={() => setAba("entrar")}
+                            >
                                 Entrar com Código
                             </button>
                         </div>
@@ -495,7 +478,8 @@ export default function SalaVirtual() {
                         </p>
 
                         <span>
-                            Todas as mensagens, membros e conversas serão removidas permanentemente.
+                            Todas as mensagens, membros e conversas serão removidas
+                            permanentemente.
                         </span>
 
                         <div className="modal-actions">
@@ -503,7 +487,10 @@ export default function SalaVirtual() {
                                 Cancelar
                             </button>
 
-                            <button className="modal-excluir-btn" onClick={excluirGrupo}>
+                            <button
+                                className="modal-excluir-btn"
+                                onClick={excluirGrupo}
+                            >
                                 Excluir grupo
                             </button>
                         </div>

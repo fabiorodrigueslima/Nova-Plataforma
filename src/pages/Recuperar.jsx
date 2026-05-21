@@ -1,23 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
-
 import "../styles/style.css";
 
 export default function Recuperar() {
-
     const navigate = useNavigate();
 
     const [email, setEmail] = useState("");
-
     const [loading, setLoading] = useState(false);
-
     const [mensagem, setMensagem] = useState("");
-
     const [erro, setErro] = useState("");
 
     async function handleRecuperar(e) {
-
         e.preventDefault();
 
         setErro("");
@@ -28,51 +22,37 @@ export default function Recuperar() {
             return;
         }
 
-        setLoading(true);
-
         try {
+            setLoading(true);
 
-            const res = await api.post("/recuperar", {
-                email
+            await api.post("/recuperar", {
+                email,
             });
 
-            const data = res.data;
-
-            setMensagem(
-                "Enviamos um link de recuperação para seu email."
-            );
-
+            setMensagem("Enviamos um link de recuperação para seu email.");
+            setEmail("");
         } catch (error) {
-
             setErro(
                 error.response?.data?.erro ||
                 "Erro ao recuperar senha."
             );
+        } finally {
+            setLoading(false);
         }
-
-        setLoading(false);
     }
 
     return (
-
         <main className="recover-page">
-
-            {/* ================= LEFT ================= */}
-
             <section className="recover-left">
-
                 <div className="recover-brand">
-
                     <div className="recover-logo">
                         P
                     </div>
 
                     <h1>POSTFAN</h1>
-
                 </div>
 
                 <div className="recover-left-content">
-
                     <h2>
                         Recuperar
                         <br />
@@ -83,20 +63,14 @@ export default function Recuperar() {
                         Informe seu email para receber
                         um link de recuperação da sua conta.
                     </p>
-
                 </div>
-
             </section>
 
-            {/* ================= RIGHT ================= */}
-
             <section className="recover-right">
-
                 <form
                     className="recover-card"
                     onSubmit={handleRecuperar}
                 >
-
                     <h2>Esqueci minha senha</h2>
 
                     <p className="recover-subtitle">
@@ -128,27 +102,18 @@ export default function Recuperar() {
                         className="recover-submit"
                         disabled={loading}
                     >
-
-                        {loading
-                            ? "Enviando..."
-                            : "Enviar recuperação"}
-
+                        {loading ? "Enviando..." : "Enviar recuperação"}
                     </button>
 
                     <p className="recover-login">
-
                         Lembrou sua senha?
 
-                        <span
-                            onClick={() => navigate("/login")}
-                        >
+                        <span onClick={() => navigate("/login")}>
                             Entrar
                         </span>
-
                     </p>
 
                     <div className="recover-footer-links">
-
                         <span onClick={() => navigate("/termos")}>
                             Termos
                         </span>
@@ -164,14 +129,9 @@ export default function Recuperar() {
                         <span onClick={() => navigate("/ajuda")}>
                             Ajuda
                         </span>
-
                     </div>
-
                 </form>
-
             </section>
-
         </main>
-
     );
 }

@@ -31,7 +31,7 @@ export default function Recuperar() {
                     email,
                 },
                 {
-                    timeout: 45000,
+                    timeout: 60000,
                 }
             );
 

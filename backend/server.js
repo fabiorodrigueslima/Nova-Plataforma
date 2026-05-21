@@ -450,6 +450,10 @@ app.post("/recuperar", async (req, res) => {
     const { email } = req.body;
     const emailUser = process.env.EMAIL_USER;
     const emailPass = process.env.EMAIL_PASS;
+    const emailHost = process.env.EMAIL_HOST || "smtp.gmail.com";
+    const emailPort = Number(process.env.EMAIL_PORT || 587);
+    const emailSecure =
+      process.env.EMAIL_SECURE === "true" || emailPort === 465;
 
     if (!email) {
       return res.status(400).json({ erro: "Digite seu email." });
@@ -489,10 +493,13 @@ app.post("/recuperar", async (req, res) => {
     const link = `${FRONTEND_URL}/resetar-senha?token=${token}`;
 
     const transporter = nodemailer.createTransport({
-      service: "gmail",
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 20000,
+      host: emailHost,
+      port: emailPort,
+      secure: emailSecure,
+      requireTLS: !emailSecure,
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000,
       auth: {
         user: emailUser,
         pass: emailPass,

@@ -3,6 +3,30 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import "../styles/style.css";
 
+function Avatar({ className, foto, nome, onClick }) {
+  const [erroImagem, setErroImagem] = useState(false);
+  const inicial = nome?.trim()?.charAt(0)?.toUpperCase() || "?";
+
+  return (
+    <button
+      type="button"
+      className={`${className} ${onClick ? "avatar-clickable" : ""}`}
+      onClick={onClick}
+      aria-label={onClick ? `Abrir perfil de ${nome || "usuário"}` : undefined}
+    >
+      {foto && !erroImagem ? (
+        <img
+          src={foto}
+          alt={nome || "Usuário"}
+          onError={() => setErroImagem(true)}
+        />
+      ) : (
+        <span>{inicial}</span>
+      )}
+    </button>
+  );
+}
+
 export default function RightPanel({ posts = [] }) {
   const navigate = useNavigate();
 
@@ -162,13 +186,12 @@ export default function RightPanel({ posts = [] }) {
       <div className="profile-card">
         <div className="profile-cover"></div>
 
-        <div className="profile-avatar">
-          {usuario?.foto ? (
-            <img src={usuario.foto} alt={usuario.nome} />
-          ) : (
-            usuario?.nome?.charAt(0) || "?"
-          )}
-        </div>
+        <Avatar
+          className="profile-avatar"
+          foto={usuario?.foto}
+          nome={usuario?.nome}
+          onClick={() => usuario?.id && navigate(`/perfil/${usuario.id}`)}
+        />
 
         <h3>{usuario?.nome || "Usuário PostFan"}</h3>
         <p>@{usuario?.email || "usuario"}</p>
@@ -207,13 +230,12 @@ export default function RightPanel({ posts = [] }) {
         ) : (
           usuariosReais.slice(0, 4).map((user) => (
             <div className="suggestion-user" key={user.id}>
-              <div className="suggestion-avatar">
-                {user?.foto ? (
-                  <img src={user.foto} alt={user.nome} />
-                ) : (
-                  user?.nome?.charAt(0) || "?"
-                )}
-              </div>
+              <Avatar
+                className="suggestion-avatar"
+                foto={user?.foto}
+                nome={user?.nome}
+                onClick={() => navigate(`/perfil/${user.id}`)}
+              />
 
               <div className="suggestion-info">
                 <strong>{user.nome}</strong>

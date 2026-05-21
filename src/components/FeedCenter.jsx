@@ -1,12 +1,38 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import "../styles/style.css";
+
+function Avatar({ className = "post-avatar", foto, nome, onClick }) {
+    const [erroImagem, setErroImagem] = useState(false);
+    const inicial = nome?.trim()?.charAt(0)?.toUpperCase() || "?";
+
+    return (
+        <button
+            type="button"
+            className={`${className} ${onClick ? "avatar-clickable" : ""}`}
+            onClick={onClick}
+            aria-label={onClick ? `Abrir perfil de ${nome || "usuário"}` : undefined}
+        >
+            {foto && !erroImagem ? (
+                <img
+                    src={foto}
+                    alt={nome || "Usuário"}
+                    onError={() => setErroImagem(true)}
+                />
+            ) : (
+                <span>{inicial}</span>
+            )}
+        </button>
+    );
+}
 
 export default function FeedCenter({
     temaAtivo = "Todos",
     posts = [],
     setPosts,
 }) {
+    const navigate = useNavigate();
     const usuario = JSON.parse(localStorage.getItem("usuario") || "{}");
 
     const [texto, setTexto] = useState("");
@@ -296,13 +322,7 @@ export default function FeedCenter({
         <section className="feed-center">
             <div className="post-box">
                 <div className="post-user">
-                    <div className="post-avatar">
-                        {usuario?.foto ? (
-                            <img src={usuario.foto} alt={usuario.nome} />
-                        ) : (
-                            usuario?.nome?.charAt(0) || "?"
-                        )}
-                    </div>
+                    <Avatar foto={usuario?.foto} nome={usuario?.nome} />
 
                     <textarea
                         placeholder="No que você está pensando?"
@@ -450,22 +470,35 @@ export default function FeedCenter({
                             Number(post.usuario_id || post.usuarioId) ===
                             Number(usuario?.id);
 
+                        const autorId =
+                            post.usuario_id || post.usuarioId || post.autor_id;
+
+                        function abrirPerfilAutor() {
+                            if (autorId) {
+                                navigate(`/perfil/${autorId}`);
+                            }
+                        }
+
                         const comentarios =
                             comentariosPost[post.id] || post.comentarios || [];
 
                         return (
                             <article className="feed-post" key={post.id}>
                                 <div className="feed-post-top">
-                                    <div className="post-avatar">
-                                        {fotoAutor ? (
-                                            <img src={fotoAutor} alt={autor} />
-                                        ) : (
-                                            autor?.charAt(0) || "?"
-                                        )}
-                                    </div>
+                                    <Avatar
+                                        foto={fotoAutor}
+                                        nome={autor}
+                                        onClick={abrirPerfilAutor}
+                                    />
 
                                     <div>
-                                        <h4>{autor}</h4>
+                                        <button
+                                            type="button"
+                                            className="post-author-link"
+                                            onClick={abrirPerfilAutor}
+                                        >
+                                            {autor}
+                                        </button>
                                         <span>{criadoEm}</span>
                                     </div>
 

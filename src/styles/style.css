@@ -5841,3 +5841,64 @@ body {
   padding: 18px !important;
 }
 
+/* ================= RIGHT PANEL SEM SUMIR ================= */
+
+@media (min-width: 1181px) {
+  .feed-page,
+  .feed-layout {
+    grid-template-columns: 240px minmax(480px, 700px) 320px !important;
+    align-items: start !important;
+  }
+
+  .right-panel {
+    display: flex !important;
+    width: 320px !important;
+    min-width: 0 !important;
+    position: sticky !important;
+    top: 20px !important;
+    height: calc(100vh - 40px) !important;
+    overflow-y: auto !important;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1180px) {
+  .feed-page,
+  .feed-layout {
+    grid-template-columns: 86px minmax(0, 1fr) 300px !important;
+    gap: 16px !important;
+    align-items: start !important;
+  }
+
+  .sidebar {
+    display: flex !important;
+    width: 86px !important;
+  }
+
+  .right-panel {
+    display: flex !important;
+    width: 300px !important;
+    min-width: 0 !important;
+    position: sticky !important;
+    top: 16px !important;
+    height: calc(100vh - 32px) !important;
+    overflow-y: auto !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .feed-page,
+  .feed-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .right-panel {
+    display: flex !important;
+    width: 100% !important;
+    max-width: 680px !important;
+    height: auto !important;
+    position: static !important;
+    margin: 0 auto 18px !important;
+    overflow: visible !important;
+  }
+}
+

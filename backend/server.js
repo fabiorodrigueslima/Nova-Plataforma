@@ -1,4 +1,18 @@
-require("dotenv").config();
+const path = require("path");
+
+require("dotenv").config({
+  path: path.resolve(__dirname, "../.env.local"),
+  override: false,
+  quiet: true,
+});
+
+require("dotenv").config({
+  path: path.resolve(__dirname, "../.env"),
+  override: false,
+  quiet: true,
+});
+
+require("dotenv").config({ quiet: true });
 
 const express = require("express");
 const cors = require("cors");
@@ -7,9 +21,9 @@ const nodemailer = require("nodemailer");
 const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
-const path = require("path");
 const fs = require("fs");
 const pool = require("./db");
+const { bloquearSeNecessario } = require("./moderacao");
 
 const app = express();
 
@@ -753,8 +767,12 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
 
     if (!conteudo && !imagem) {
       return res.status(400).json({
-        erro: "Escreva algo ou envie uma imagem, vídeo ou documento.",
+        erro: "Escreva algo ou envie uma imagem, video ou documento.",
       });
+    }
+
+    if (bloquearSeNecessario(conteudo, res)) {
+      return;
     }
 
     const novo = await pool.query(
@@ -829,6 +847,10 @@ app.put("/posts/:id", autenticar, async (req, res) => {
 
     if (Number(post.rows[0].usuario_id) !== Number(req.usuario.id)) {
       return res.status(403).json({ erro: "Você não pode editar este post." });
+    }
+
+    if (conteudo !== undefined && bloquearSeNecessario(conteudo, res)) {
+      return;
     }
 
     const atualizado = await pool.query(
@@ -965,6 +987,10 @@ app.post("/comentarios", autenticar, async (req, res) => {
       return res.status(400).json({
         erro: "post_id e conteudo são obrigatórios.",
       });
+    }
+
+    if (bloquearSeNecessario(conteudo, res)) {
+      return;
     }
 
     const novo = await pool.query(
@@ -1233,6 +1259,10 @@ app.post("/api/grupos", autenticar, async (req, res) => {
       });
     }
 
+    if (bloquearSeNecessario(`${nome} ${descricao} ${categoria || ""}`, res)) {
+      return;
+    }
+
     let codigo = gerarCodigoGrupo();
 
     let codigoExiste = await pool.query(
@@ -1470,6 +1500,10 @@ app.post("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
 
     if (!mensagem) {
       return res.status(400).json({ erro: "Digite uma mensagem." });
+    }
+
+    if (bloquearSeNecessario(mensagem, res)) {
+      return;
     }
 
     const membro = await pool.query(

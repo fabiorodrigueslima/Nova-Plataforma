@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { analisarConteudo } from "../utils/moderacao";
 import "../styles/style.css";
 
 export default function GrupoChat() {
@@ -53,6 +54,13 @@ export default function GrupoChat() {
         e.preventDefault();
 
         if (!mensagem.trim()) return;
+
+        const moderacao = analisarConteudo(mensagem);
+
+        if (!moderacao.aprovado) {
+            alert(moderacao.motivo);
+            return;
+        }
 
         try {
             await api.post(`/api/grupos/${id}/mensagens`, {

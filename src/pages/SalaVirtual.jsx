@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { analisarConteudo } from "../utils/moderacao";
 import "../styles/style.css";
 
 export default function SalaVirtual() {
@@ -97,6 +98,15 @@ export default function SalaVirtual() {
 
     async function criarGrupo(e) {
         e.preventDefault();
+
+        const moderacao = analisarConteudo(
+            `${form.nome} ${form.descricao} ${form.categoria}`
+        );
+
+        if (!moderacao.aprovado) {
+            abrirModalSucesso("Revise o grupo", moderacao.motivo);
+            return;
+        }
 
         try {
             const res = await api.post("/api/grupos", form);

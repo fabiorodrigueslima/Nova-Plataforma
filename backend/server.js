@@ -60,7 +60,10 @@ if (process.env.FRONTEND_URL) {
 }
 
 function validarOrigem(origin, callback) {
-  if (!origin || allowedOrigins.includes(origin)) {
+  const origemLocal =
+    /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin || "");
+
+  if (!origin || origemLocal || allowedOrigins.includes(origin)) {
     return callback(null, true);
   }
 
@@ -269,6 +272,15 @@ async function criarTabelas() {
       ALTER TABLE posts ADD COLUMN IF NOT EXISTS tipo_arquivo VARCHAR(50);
       ALTER TABLE posts ADD COLUMN IF NOT EXISTS nome_arquivo TEXT;
       ALTER TABLE posts ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW();
+
+      ALTER TABLE comentarios ADD COLUMN IF NOT EXISTS conteudo TEXT;
+      ALTER TABLE comentarios ADD COLUMN IF NOT EXISTS texto TEXT;
+      UPDATE comentarios
+      SET conteudo = texto
+      WHERE conteudo IS NULL AND texto IS NOT NULL;
+      UPDATE comentarios
+      SET texto = conteudo
+      WHERE texto IS NULL AND conteudo IS NOT NULL;
     `);
 
     console.log("✅ Tabelas verificadas/atualizadas com sucesso!");
@@ -283,6 +295,16 @@ criarTabelas();
 
 function gerarCodigoGrupo() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function obterFrontendUrl(req) {
+  const origin = req.get("origin");
+
+  if (origin && allowedOrigins.includes(origin)) {
+    return origin;
+  }
+
+  return FRONTEND_URL;
 }
 
 function autenticar(req, res, next) {
@@ -524,7 +546,9 @@ app.post("/recuperar", async (req, res) => {
       [token, expira, email],
     );
 
-    const link = `${FRONTEND_URL}/resetar-senha?token=${token}`;
+    const link = `${obterFrontendUrl(req)}/resetar-senha?token=${encodeURIComponent(
+      token,
+    )}`;
 
     const transporter = nodemailer.createTransport({
       host: emailHost,
@@ -578,9 +602,11 @@ app.post("/recuperar", async (req, res) => {
 
 app.post("/resetar", async (req, res) => {
   try {
-    const { token, novaSenha } = req.body;
+    const tokenRecebido = req.body.token || req.query.token;
+    const tokenLimpo = String(tokenRecebido || "").trim();
+    const { novaSenha } = req.body;
 
-    if (!token || !novaSenha) {
+    if (!tokenLimpo || !novaSenha) {
       return res.status(400).json({
         erro: "Token e nova senha são obrigatórios.",
       });
@@ -594,11 +620,14 @@ app.post("/resetar", async (req, res) => {
 
     const resultado = await pool.query(
       "SELECT * FROM usuarios WHERE token_recuperacao = $1",
-      [token],
+      [tokenLimpo],
     );
 
     if (resultado.rows.length === 0) {
-      return res.status(400).json({ erro: "Token inválido." });
+      return res.status(400).json({
+        erro:
+          "Token inválido. Solicite um novo link de recuperação e use o link mais recente enviado por email.",
+      });
     }
 
     const usuario = resultado.rows[0];
@@ -982,6 +1011,7 @@ app.get("/comentarios", autenticar, async (req, res) => {
       `
       SELECT 
         cm.*,
+        COALESCE(cm.conteudo, cm.texto) AS conteudo,
         u.nome,
         u.foto
       FROM comentarios cm
@@ -1015,8 +1045,8 @@ app.post("/comentarios", autenticar, async (req, res) => {
 
     const novo = await pool.query(
       `
-      INSERT INTO comentarios (usuario_id, post_id, conteudo)
-      VALUES ($1, $2, $3)
+      INSERT INTO comentarios (usuario_id, post_id, conteudo, texto)
+      VALUES ($1, $2, $3, $3)
       RETURNING *
       `,
       [req.usuario.id, post_id, conteudo],
@@ -1026,6 +1056,7 @@ app.post("/comentarios", autenticar, async (req, res) => {
       `
       SELECT 
         cm.*,
+        COALESCE(cm.conteudo, cm.texto) AS conteudo,
         u.nome,
         u.foto
       FROM comentarios cm

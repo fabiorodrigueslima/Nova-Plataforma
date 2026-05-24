@@ -27,28 +27,21 @@ export default function Recuperar() {
 
             await api.post(
                 "/recuperar",
-                {
-                    email,
-                },
-                {
-                    timeout: 60000,
-                }
+                { email },
+                { timeout: 60000 },
             );
 
-            setMensagem("Enviamos um link de recuperação para seu email. Verifique também a caixa de spam.");
+            setMensagem(
+                "Enviamos um link de recuperação para seu email. Use o link mais recente e verifique também a caixa de spam.",
+            );
             setEmail("");
         } catch (error) {
             if (error.code === "ECONNABORTED") {
-                setErro(
-                    "O servidor demorou para responder. Tente novamente em alguns minutos."
-                );
+                setErro("O servidor demorou para responder. Tente novamente em alguns minutos.");
                 return;
             }
 
-            setErro(
-                error.response?.data?.erro ||
-                "Erro ao recuperar senha."
-            );
+            setErro(error.response?.data?.erro || "Erro ao recuperar senha.");
         } finally {
             setLoading(false);
         }
@@ -58,10 +51,7 @@ export default function Recuperar() {
         <main className="recover-page">
             <section className="recover-left">
                 <div className="recover-brand">
-                    <div className="recover-logo">
-                        P
-                    </div>
-
+                    <div className="recover-logo">P</div>
                     <h1>POSTFAN</h1>
                 </div>
 
@@ -72,26 +62,17 @@ export default function Recuperar() {
                         sua senha
                     </h2>
 
-                    <p>
-                        Informe seu email para receber
-                        um link de recuperação da sua conta.
-                    </p>
+                    <p>Informe seu email para receber um link de recuperação da sua conta.</p>
                 </div>
             </section>
 
             <section className="recover-right">
-                <form
-                    className="recover-card"
-                    onSubmit={handleRecuperar}
-                >
+                <form className="recover-card" onSubmit={handleRecuperar}>
                     <h2>Esqueci minha senha</h2>
 
-                    <p className="recover-subtitle">
-                        Digite o email da sua conta.
-                    </p>
+                    <p className="recover-subtitle">Digite o email da sua conta.</p>
 
                     <label>E-mail</label>
-
                     <input
                         type="email"
                         placeholder="Digite seu email"
@@ -99,49 +80,23 @@ export default function Recuperar() {
                         onChange={(e) => setEmail(e.target.value)}
                     />
 
-                    {erro && (
-                        <div className="erro-msg">
-                            {erro}
-                        </div>
-                    )}
+                    {erro && <div className="erro-msg">{erro}</div>}
+                    {mensagem && <div className="success-msg">{mensagem}</div>}
 
-                    {mensagem && (
-                        <div className="success-msg">
-                            {mensagem}
-                        </div>
-                    )}
-
-                    <button
-                        className="recover-submit"
-                        disabled={loading}
-                    >
+                    <button className="recover-submit" disabled={loading}>
                         {loading ? "Enviando..." : "Enviar recuperação"}
                     </button>
 
                     <p className="recover-login">
                         Lembrou sua senha?
-
-                        <span onClick={() => navigate("/login")}>
-                            Entrar
-                        </span>
+                        <span onClick={() => navigate("/login")}>Entrar</span>
                     </p>
 
                     <div className="recover-footer-links">
-                        <span onClick={() => navigate("/termos")}>
-                            Termos
-                        </span>
-
-                        <span onClick={() => navigate("/privacidade")}>
-                            Privacidade
-                        </span>
-
-                        <span onClick={() => navigate("/cookies")}>
-                            Cookies
-                        </span>
-
-                        <span onClick={() => navigate("/ajuda")}>
-                            Ajuda
-                        </span>
+                        <span onClick={() => navigate("/termos")}>Termos</span>
+                        <span onClick={() => navigate("/privacidade")}>Privacidade</span>
+                        <span onClick={() => navigate("/cookies")}>Cookies</span>
+                        <span onClick={() => navigate("/ajuda")}>Ajuda</span>
                     </div>
                 </form>
             </section>

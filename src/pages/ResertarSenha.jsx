@@ -5,7 +5,8 @@ import "../styles/style.css";
 
 export default function ResetarSenha() {
     const [searchParams] = useSearchParams();
-    const token = searchParams.get("token");
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const token = (searchParams.get("token") || hashParams.get("token") || "").trim();
 
     const [senha, setSenha] = useState("");
     const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -20,7 +21,7 @@ export default function ResetarSenha() {
         setErro("");
 
         if (!token) {
-            setErro("Token inválido ou não encontrado.");
+            setErro("Token inválido ou não encontrado. Solicite um novo link de recuperação.");
             return;
         }
 
@@ -51,10 +52,7 @@ export default function ResetarSenha() {
             setSenha("");
             setConfirmarSenha("");
         } catch (error) {
-            setErro(
-                error.response?.data?.erro ||
-                "Erro ao conectar com o servidor."
-            );
+            setErro(error.response?.data?.erro || "Erro ao conectar com o servidor.");
         } finally {
             setLoading(false);
         }
@@ -68,7 +66,6 @@ export default function ResetarSenha() {
 
                 <form onSubmit={resetarSenha}>
                     <label>Nova senha</label>
-
                     <input
                         type="password"
                         placeholder="Digite sua nova senha"
@@ -77,7 +74,6 @@ export default function ResetarSenha() {
                     />
 
                     <label>Confirmar senha</label>
-
                     <input
                         type="password"
                         placeholder="Confirme sua nova senha"

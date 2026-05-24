@@ -7,8 +7,9 @@ import "../styles/style.css";
 export default function ResetarSenha() {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 
-    const token = searchParams.get("token");
+    const token = (searchParams.get("token") || hashParams.get("token") || "").trim();
 
     const [senha, setSenha] = useState("");
     const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -23,7 +24,7 @@ export default function ResetarSenha() {
         setMensagem("");
 
         if (!token) {
-            setErro("Token inválido ou não encontrado.");
+            setErro("Token inv�lido ou n�o encontrado. Solicite um novo link de recupera��o.");
             return;
         }
 

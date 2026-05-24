@@ -174,6 +174,7 @@ async function criarTabelas() {
         essencia_tema TEXT,
         essencia_frase TEXT,
         aberto_para TEXT,
+        ultimo_acesso TIMESTAMP,
         token_recuperacao TEXT,
         token_expira TIMESTAMP,
         criado_em TIMESTAMP DEFAULT NOW()
@@ -256,6 +257,7 @@ async function criarTabelas() {
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_tema TEXT;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_frase TEXT;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aberto_para TEXT;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_acesso TIMESTAMP;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_recuperacao TEXT;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_expira TIMESTAMP;
 
@@ -298,6 +300,13 @@ function autenticar(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.usuario = decoded;
+
+    pool
+      .query("UPDATE usuarios SET ultimo_acesso = NOW() WHERE id = $1", [
+        decoded.id,
+      ])
+      .catch(() => {});
+
     next();
   } catch {
     return res.status(401).json({ erro: "Token expirado ou inválido." });
@@ -1062,6 +1071,8 @@ app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
         u.email,
         u.foto,
         u.bio,
+        u.ultimo_acesso,
+        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
         EXISTS (
           SELECT 1
           FROM seguidores s
@@ -1087,6 +1098,107 @@ app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
 });
 
 /* ================= BUSCAR USUÁRIO ================= */
+
+/* ================= USUÁRIOS ONLINE ================= */
+
+app.get("/usuarios/online", autenticar, async (req, res) => {
+  try {
+    const online = await pool.query(
+      `
+      SELECT
+        u.id,
+        u.nome,
+        u.email,
+        u.foto,
+        u.bio,
+        u.ultimo_acesso,
+        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
+        EXISTS (
+          SELECT 1
+          FROM seguidores s
+          WHERE s.seguidor_id = $1
+          AND s.seguindo_id = u.id
+        ) AS seguindo
+      FROM usuarios u
+      WHERE u.id != $1
+      AND u.ultimo_acesso > NOW() - INTERVAL '5 minutes'
+      ORDER BY u.ultimo_acesso DESC
+      LIMIT 8
+      `,
+      [req.usuario.id],
+    );
+
+    res.json(online.rows);
+  } catch (error) {
+    console.error("❌ Erro ao buscar usuários online:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar usuários online." });
+  }
+});
+
+/* ================= SEGUIDORES / SEGUINDO ================= */
+
+app.get("/usuarios/seguidores", autenticar, async (req, res) => {
+  try {
+    const seguidores = await pool.query(
+      `
+      SELECT
+        u.id,
+        u.nome,
+        u.email,
+        u.foto,
+        u.bio,
+        u.ultimo_acesso,
+        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
+        EXISTS (
+          SELECT 1
+          FROM seguidores rel
+          WHERE rel.seguidor_id = $1
+          AND rel.seguindo_id = u.id
+        ) AS seguindo
+      FROM seguidores s
+      JOIN usuarios u ON u.id = s.seguidor_id
+      WHERE s.seguindo_id = $1
+      ORDER BY s.criado_em DESC
+      LIMIT 12
+      `,
+      [req.usuario.id],
+    );
+
+    res.json(seguidores.rows);
+  } catch (error) {
+    console.error("❌ Erro ao buscar seguidores:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar seguidores." });
+  }
+});
+
+app.get("/usuarios/seguindo", autenticar, async (req, res) => {
+  try {
+    const seguindo = await pool.query(
+      `
+      SELECT
+        u.id,
+        u.nome,
+        u.email,
+        u.foto,
+        u.bio,
+        u.ultimo_acesso,
+        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
+        true AS seguindo
+      FROM seguidores s
+      JOIN usuarios u ON u.id = s.seguindo_id
+      WHERE s.seguidor_id = $1
+      ORDER BY s.criado_em DESC
+      LIMIT 12
+      `,
+      [req.usuario.id],
+    );
+
+    res.json(seguindo.rows);
+  } catch (error) {
+    console.error("❌ Erro ao buscar seguindo:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar seguindo." });
+  }
+});
 
 app.get("/usuarios/:id", autenticar, async (req, res) => {
   try {

@@ -5714,3 +5714,130 @@ body {
   font-weight: 700;
 }
 
+/* ================= PAINEL DIREITO / REDE ================= */
+
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.right-card-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 16px;
+  color: var(--color-text);
+}
+
+.right-card-title h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.right-card-title svg {
+  color: var(--color-accent);
+}
+
+.suggestion-avatar,
+.profile-avatar {
+  position: relative;
+}
+
+.online-dot {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 12px !important;
+  height: 12px !important;
+  min-width: 12px !important;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+
+.profile-avatar .online-dot {
+  right: 8px;
+  bottom: 8px;
+  width: 15px !important;
+  height: 15px !important;
+}
+
+.suggestion-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.suggestion-info strong,
+.suggestion-info span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion-user {
+  min-height: 56px;
+}
+
+.suggestion-user.compact {
+  margin-bottom: 12px;
+}
+
+.suggestion-user button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 78px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--gradient-primary) !important;
+  color: #fff;
+  font-weight: 800;
+}
+
+.suggestion-user.compact button {
+  min-width: 38px;
+  width: 38px;
+  padding: 0;
+}
+
+.suggestion-user button.following-btn {
+  background: rgba(20, 184, 166, 0.16) !important;
+  color: #99f6e4;
+  border: 1px solid rgba(20, 184, 166, 0.32);
+}
+
+.network-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.network-tabs button {
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.network-tabs button.active {
+  background: rgba(37, 99, 235, 0.22);
+  color: var(--color-text);
+  border-color: rgba(20, 184, 166, 0.36);
+}
+
+.online-card,
+.network-card {
+  padding: 18px !important;
+}
+

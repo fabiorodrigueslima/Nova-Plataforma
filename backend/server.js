@@ -40,6 +40,7 @@ const FRONTEND_URL =
   process.env.FRONTEND_URL || "https://postfan-novo.netlify.app";
 
 const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+const frontendDistDir = path.resolve(__dirname, "../dist");
 
 const allowedOrigins = [
   "http://localhost:5173",
@@ -424,7 +425,10 @@ app.post("/login", async (req, res) => {
     );
 
     if (resultado.rows.length === 0) {
-      return res.status(400).json({ erro: "Email ou senha inválidos." });
+      return res.json({
+        autenticado: false,
+        erro: "Email ou senha inválidos.",
+      });
     }
 
     const usuario = resultado.rows[0];
@@ -432,7 +436,10 @@ app.post("/login", async (req, res) => {
     const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
 
     if (!senhaCorreta) {
-      return res.status(400).json({ erro: "Email ou senha inválidos." });
+      return res.json({
+        autenticado: false,
+        erro: "Email ou senha inválidos.",
+      });
     }
 
     const token = jwt.sign(
@@ -446,6 +453,7 @@ app.post("/login", async (req, res) => {
     );
 
     res.json({
+      autenticado: true,
       mensagem: "Login realizado com sucesso!",
       token,
       usuario: {
@@ -496,7 +504,10 @@ app.post("/recuperar", async (req, res) => {
     );
 
     if (resultado.rows.length === 0) {
-      return res.status(404).json({ erro: "Email não encontrado." });
+      return res.json({
+        mensagem:
+          "Se este email estiver cadastrado, enviaremos um link de recuperação.",
+      });
     }
 
     const token = uuidv4();
@@ -1695,6 +1706,20 @@ app.use((error, req, res, next) => {
 
   next(error);
 });
+
+/* ================= FRONTEND SPA ================= */
+
+if (fs.existsSync(frontendDistDir)) {
+  app.use(express.static(frontendDistDir));
+
+  app.get(/^(?!\/api\/|\/uploads\/).*/, (req, res, next) => {
+    if (!req.accepts("html")) {
+      return next();
+    }
+
+    return res.sendFile(path.join(frontendDistDir, "index.html"));
+  });
+}
 
 /* ================= INICIAR SERVIDOR ================= */
 

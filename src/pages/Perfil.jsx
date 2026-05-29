@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import {
+    FiAlertTriangle,
+    FiHeart,
+    FiMessageCircle,
+    FiSend,
+    FiShare2,
+    FiX,
+} from "react-icons/fi";
 import api from "../services/api";
+import { analisarConteudo } from "../utils/moderacao";
 import "../styles/style.css";
 
 export default function Perfil() {
@@ -24,6 +33,12 @@ export default function Perfil() {
 
     const [loading, setLoading] = useState(true);
     const [abaAtiva, setAbaAtiva] = useState("posts");
+    const [comentarioAberto, setComentarioAberto] = useState(null);
+    const [comentariosPost, setComentariosPost] = useState({});
+    const [novoComentario, setNovoComentario] = useState({});
+    const [mensagemAberta, setMensagemAberta] = useState(false);
+    const [mensagemTexto, setMensagemTexto] = useState("");
+    const [enviandoMensagem, setEnviandoMensagem] = useState(false);
 
     async function carregarPerfil() {
         try {
@@ -37,35 +52,34 @@ export default function Perfil() {
 
             setPerfil(resUsuario.data);
             setStats(resStats.data);
-
-            setPosts(
-                Array.isArray(resPosts.data)
-                    ? resPosts.data
-                    : []
-            );
-
+            setPosts(Array.isArray(resPosts.data) ? resPosts.data : []);
         } catch (error) {
-
-            console.error(
-                "Erro ao carregar perfil:",
-                error
-            );
-
+            console.error("Erro ao carregar perfil:", error);
             setPerfil(null);
-
         } finally {
-
             setLoading(false);
         }
     }
 
+    function validarTexto(texto, mensagemPadrao) {
+        if (!texto?.trim()) {
+            alert(mensagemPadrao);
+            return false;
+        }
+
+        const moderacao = analisarConteudo(texto);
+
+        if (!moderacao.aprovado) {
+            alert(moderacao.motivo);
+            return false;
+        }
+
+        return true;
+    }
+
     async function seguirUsuario() {
         try {
-
-            const res = await api.post(
-                `/seguir/${perfilId}`
-            );
-
+            const res = await api.post(`/seguir/${perfilId}`);
             const data = res.data;
 
             setStats((prev) => ({
@@ -73,23 +87,169 @@ export default function Perfil() {
                 seguindo: data.seguindo,
                 total_seguidores: data.seguindo
                     ? Number(prev.total_seguidores) + 1
-                    : Math.max(
-                        Number(prev.total_seguidores) - 1,
-                        0
-                    ),
+                    : Math.max(Number(prev.total_seguidores) - 1, 0),
+            }));
+        } catch (error) {
+            console.error("Erro ao seguir:", error);
+            alert(error.response?.data?.erro || "Erro ao seguir usuário.");
+        }
+    }
+
+    async function curtirPost(idPost) {
+        try {
+            const res = await api.post("/curtir", { post_id: idPost });
+            const data = res.data;
+
+            setPosts((prev) =>
+                prev.map((post) => {
+                    if (post.id !== idPost) return post;
+
+                    const totalAtual = Number(post.total_curtidas || 0);
+
+                    return {
+                        ...post,
+                        curtiu: data.curtiu,
+                        total_curtidas: data.curtiu
+                            ? totalAtual + 1
+                            : Math.max(totalAtual - 1, 0),
+                    };
+                }),
+            );
+        } catch (error) {
+            console.error("Erro ao curtir post:", error);
+            alert(error.response?.data?.erro || "Erro ao curtir post.");
+        }
+    }
+
+    async function abrirComentarios(idPost) {
+        if (comentarioAberto === idPost) {
+            setComentarioAberto(null);
+            return;
+        }
+
+        setComentarioAberto(idPost);
+
+        try {
+            const res = await api.get(`/comentarios?post_id=${idPost}`);
+            setComentariosPost((prev) => ({
+                ...prev,
+                [idPost]: Array.isArray(res.data) ? res.data : [],
+            }));
+        } catch (error) {
+            console.error("Erro ao carregar comentários:", error);
+            alert(error.response?.data?.erro || "Erro ao carregar comentários.");
+        }
+    }
+
+    async function comentar(idPost) {
+        const textoComentario = novoComentario[idPost];
+        if (!validarTexto(textoComentario, "Escreva um comentário.")) return;
+
+        try {
+            const res = await api.post("/comentarios", {
+                post_id: idPost,
+                conteudo: textoComentario.trim(),
+            });
+            const comentario = res.data.comentario || res.data;
+
+            setComentariosPost((prev) => ({
+                ...prev,
+                [idPost]: [...(prev[idPost] || []), comentario],
             }));
 
+            setPosts((prev) =>
+                prev.map((post) =>
+                    post.id === idPost
+                        ? {
+                            ...post,
+                            total_comentarios: Number(post.total_comentarios || 0) + 1,
+                        }
+                        : post,
+                ),
+            );
+
+            setNovoComentario((prev) => ({ ...prev, [idPost]: "" }));
         } catch (error) {
+            console.error("Erro ao comentar:", error);
+            alert(error.response?.data?.erro || "Erro ao comentar.");
+        }
+    }
 
-            console.error(
-                "Erro ao seguir:",
-                error
-            );
+    async function compartilhar(post) {
+        try {
+            await api.post("/compartilhar", { post_id: post.id });
+        } catch (error) {
+            console.error("Erro ao registrar compartilhamento:", error);
+        }
 
-            alert(
-                error.response?.data?.erro ||
-                "Erro ao seguir usuário."
-            );
+        const textoPost = post.conteudo || post.texto || "";
+        const autor = post.autor || post.nome || perfil?.nome || "Usuário";
+        const textoCompartilhar = `${autor} postou no PostFan:\n\n${textoPost}`;
+
+        if (navigator.share) {
+            navigator.share({ title: "PostFan", text: textoCompartilhar });
+        } else {
+            navigator.clipboard.writeText(textoCompartilhar);
+            alert("Texto do post copiado para compartilhar.");
+        }
+    }
+
+    async function denunciarPost(post) {
+        const motivo = window.prompt("Conte rapidamente o motivo da denúncia:");
+        if (!motivo) return;
+        if (!validarTexto(motivo, "Informe o motivo da denúncia.")) return;
+
+        try {
+            await api.post("/denuncias", {
+                post_id: post.id,
+                usuario_id: post.usuario_id || perfilId,
+                motivo: motivo.trim(),
+            });
+
+            alert("Denúncia enviada para análise.");
+        } catch (error) {
+            console.error("Erro ao denunciar post:", error);
+            alert(error.response?.data?.erro || "Erro ao enviar denúncia.");
+        }
+    }
+
+    async function denunciarPerfil() {
+        const motivo = window.prompt("Conte rapidamente o motivo da denúncia:");
+        if (!motivo) return;
+        if (!validarTexto(motivo, "Informe o motivo da denúncia.")) return;
+
+        try {
+            await api.post("/denuncias", {
+                usuario_id: perfilId,
+                motivo: motivo.trim(),
+            });
+
+            alert("Denúncia enviada para análise.");
+        } catch (error) {
+            console.error("Erro ao denunciar perfil:", error);
+            alert(error.response?.data?.erro || "Erro ao enviar denúncia.");
+        }
+    }
+
+    async function enviarMensagem() {
+        if (!validarTexto(mensagemTexto, "Digite uma mensagem.")) return;
+
+        try {
+            setEnviandoMensagem(true);
+
+            await api.post("/mensagens", {
+                destinatario_id: perfilId,
+                mensagem: mensagemTexto.trim(),
+            });
+
+            setMensagemTexto("");
+            setMensagemAberta(false);
+            alert("Mensagem enviada com sucesso!");
+        } catch (error) {
+            console.error("Erro ao enviar mensagem:", error);
+            alert(error.response?.data?.erro || "Erro ao enviar mensagem.");
+        } finally {
+            setEnviandoMensagem(false);
         }
     }
 
@@ -148,10 +308,7 @@ export default function Perfil() {
                             </div>
 
                             <div className="perfil-actions-pro">
-                                <button
-                                    onClick={() => navigate("/feed")}
-                                    className="btn-voltar-pro"
-                                >
+                                <button onClick={() => navigate("/feed")} className="btn-voltar-pro">
                                     Voltar para o feed
                                 </button>
 
@@ -163,16 +320,25 @@ export default function Perfil() {
                                         Editar perfil
                                     </button>
                                 ) : (
-                                    <button
-                                        onClick={seguirUsuario}
-                                        className={
-                                            stats.seguindo
-                                                ? "btn-seguindo-pro"
-                                                : "btn-seguir-pro"
-                                        }
-                                    >
-                                        {stats.seguindo ? "Seguindo" : "Seguir"}
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={() => setMensagemAberta(true)}
+                                            className="btn-mensagem-pro"
+                                        >
+                                            <FiSend aria-hidden="true" /> Mensagem
+                                        </button>
+
+                                        <button
+                                            onClick={seguirUsuario}
+                                            className={stats.seguindo ? "btn-seguindo-pro" : "btn-seguir-pro"}
+                                        >
+                                            {stats.seguindo ? "Seguindo" : "Seguir"}
+                                        </button>
+
+                                        <button onClick={denunciarPerfil} className="btn-denunciar-pro">
+                                            <FiAlertTriangle aria-hidden="true" /> Denunciar
+                                        </button>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -219,19 +385,13 @@ export default function Perfil() {
                         <div className="essencia-card-pro">
                             <span>🔥</span>
                             <h3>Meu tema favorito</h3>
-                            <p>
-                                {perfil.essencia_tema ||
-                                    "Nenhum tema favorito informado."}
-                            </p>
+                            <p>{perfil.essencia_tema || "Nenhum tema favorito informado."}</p>
                         </div>
 
                         <div className="essencia-card-pro">
                             <span>🌟</span>
                             <h3>Minha frase</h3>
-                            <p>
-                                {perfil.essencia_frase ||
-                                    "Nenhuma frase adicionada ainda."}
-                            </p>
+                            <p>{perfil.essencia_frase || "Nenhuma frase adicionada ainda."}</p>
                         </div>
 
                         <div className="essencia-card-pro">
@@ -278,30 +438,97 @@ export default function Perfil() {
                                 </div>
                             ) : (
                                 <div className="perfil-posts-grid-pro">
-                                    {posts.map((post) => (
-                                        <article className="perfil-post-card-pro" key={post.id}>
-                                            {post.imagem && (
-                                                <img
-                                                    src={post.imagem}
-                                                    alt="Post"
-                                                    onError={(e) => {
-                                                        e.currentTarget.style.display = "none";
-                                                    }}
-                                                />
-                                            )}
+                                    {posts.map((post) => {
+                                        const comentarios = comentariosPost[post.id] || [];
 
-                                            <div className="perfil-post-content-pro">
-                                                {post.tema && <span>{post.tema}</span>}
+                                        return (
+                                            <article className="perfil-post-card-pro" key={post.id}>
+                                                {post.imagem && (
+                                                    <img
+                                                        src={post.imagem}
+                                                        alt="Post"
+                                                        onError={(e) => {
+                                                            e.currentTarget.style.display = "none";
+                                                        }}
+                                                    />
+                                                )}
 
-                                                <p>{post.conteudo}</p>
+                                                <div className="perfil-post-content-pro">
+                                                    {post.tema && <span>#{post.tema}</span>}
 
-                                                <div className="perfil-post-footer-pro">
-                                                    <small>❤️ {post.total_curtidas || 0}</small>
-                                                    <small>💬 {post.total_comentarios || 0}</small>
+                                                    <p>{post.conteudo}</p>
                                                 </div>
-                                            </div>
-                                        </article>
-                                    ))}
+
+                                                <div className="perfil-post-actions-pro">
+                                                    <button
+                                                        className={post.curtiu ? "liked" : ""}
+                                                        onClick={() => curtirPost(post.id)}
+                                                    >
+                                                        <FiHeart aria-hidden="true" /> {post.total_curtidas || 0}
+                                                    </button>
+
+                                                    <button onClick={() => abrirComentarios(post.id)}>
+                                                        <FiMessageCircle aria-hidden="true" />{" "}
+                                                        {post.total_comentarios || 0}
+                                                    </button>
+
+                                                    <button onClick={() => compartilhar(post)}>
+                                                        <FiShare2 aria-hidden="true" /> Compartilhar
+                                                    </button>
+
+                                                    <button
+                                                        className="report"
+                                                        onClick={() => denunciarPost(post)}
+                                                    >
+                                                        <FiAlertTriangle aria-hidden="true" /> Denunciar
+                                                    </button>
+                                                </div>
+
+                                                {comentarioAberto === post.id && (
+                                                    <div className="perfil-comments-pro">
+                                                        {comentarios.length === 0 ? (
+                                                            <p className="no-comments">Nenhum comentário ainda.</p>
+                                                        ) : (
+                                                            comentarios.map((comentario) => (
+                                                                <div className="comment-item" key={comentario.id}>
+                                                                    <strong>
+                                                                        {comentario.autor ||
+                                                                            comentario.nome ||
+                                                                            "Usuário"}
+                                                                    </strong>
+                                                                    <p>{comentario.conteudo || comentario.texto}</p>
+                                                                    <span>
+                                                                        {comentario.criado_em
+                                                                            ? new Date(
+                                                                                comentario.criado_em,
+                                                                            ).toLocaleString("pt-BR")
+                                                                            : comentario.criadoEm || "Agora mesmo"}
+                                                                    </span>
+                                                                </div>
+                                                            ))
+                                                        )}
+
+                                                        <div className="comment-form">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Escreva um comentário..."
+                                                                value={novoComentario[post.id] || ""}
+                                                                onChange={(e) =>
+                                                                    setNovoComentario({
+                                                                        ...novoComentario,
+                                                                        [post.id]: e.target.value,
+                                                                    })
+                                                                }
+                                                            />
+                                                            <button onClick={() => comentar(post.id)}>
+                                                                <FiSend aria-hidden="true" /> Enviar
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </article>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </>
@@ -319,14 +546,39 @@ export default function Perfil() {
                         <div className="perfil-empty-pro">
                             <span>ℹ️</span>
                             <h3>Sobre o usuário</h3>
-                            <p>
-                                {perfil.bio ||
-                                    "Este usuário ainda não adicionou informações."}
-                            </p>
+                            <p>{perfil.bio || "Este usuário ainda não adicionou informações."}</p>
                         </div>
                     )}
                 </section>
             </section>
+
+            {mensagemAberta && (
+                <div className="perfil-message-overlay" role="dialog" aria-modal="true">
+                    <div className="perfil-message-modal">
+                        <button
+                            className="perfil-message-close"
+                            onClick={() => setMensagemAberta(false)}
+                            aria-label="Fechar"
+                        >
+                            <FiX aria-hidden="true" />
+                        </button>
+
+                        <h2>Enviar mensagem</h2>
+                        <p>Mensagem para {perfil.nome}</p>
+
+                        <textarea
+                            value={mensagemTexto}
+                            onChange={(e) => setMensagemTexto(e.target.value)}
+                            placeholder="Digite sua mensagem..."
+                        />
+
+                        <button onClick={enviarMensagem} disabled={enviandoMensagem}>
+                            <FiSend aria-hidden="true" />
+                            {enviandoMensagem ? "Enviando..." : "Enviar mensagem"}
+                        </button>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }

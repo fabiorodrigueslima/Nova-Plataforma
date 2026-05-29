@@ -228,6 +228,25 @@ async function criarTabelas() {
         criado_em TIMESTAMP DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS denuncias (
+        id SERIAL PRIMARY KEY,
+        denunciante_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+        motivo TEXT NOT NULL,
+        status VARCHAR(50) DEFAULT 'pendente',
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS mensagens_privadas (
+        id SERIAL PRIMARY KEY,
+        remetente_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        destinatario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        mensagem TEXT NOT NULL,
+        lida BOOLEAN DEFAULT false,
+        criado_em TIMESTAMP DEFAULT NOW()
+      );
+
       CREATE TABLE IF NOT EXISTS grupos (
         id SERIAL PRIMARY KEY,
         dono_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
@@ -281,6 +300,12 @@ async function criarTabelas() {
       UPDATE comentarios
       SET texto = conteudo
       WHERE texto IS NULL AND conteudo IS NOT NULL;
+
+      ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE;
+      ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE;
+      ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pendente';
+
+      ALTER TABLE mensagens_privadas ADD COLUMN IF NOT EXISTS lida BOOLEAN DEFAULT false;
     `);
 
     console.log("✅ Tabelas verificadas/atualizadas com sucesso!");
@@ -1098,6 +1123,125 @@ app.post("/compartilhar", autenticar, async (req, res) => {
   } catch (error) {
     console.error("❌ Erro ao compartilhar:", error.message);
     res.status(500).json({ erro: "Erro ao compartilhar." });
+  }
+});
+
+/* ================= DENUNCIAR ================= */
+
+app.post("/denuncias", autenticar, async (req, res) => {
+  try {
+    const { post_id, usuario_id, motivo } = req.body;
+    const postId = post_id ? Number(post_id) : null;
+    const usuarioId = usuario_id ? Number(usuario_id) : null;
+    const motivoDenuncia = motivo?.trim();
+
+    if (!postId && !usuarioId) {
+      return res.status(400).json({
+        erro: "Informe um post ou usuário para denunciar.",
+      });
+    }
+
+    if (!motivoDenuncia) {
+      return res.status(400).json({ erro: "Informe o motivo da denúncia." });
+    }
+
+    if (bloquearSeNecessario(motivoDenuncia, res)) {
+      return;
+    }
+
+    if (postId) {
+      const post = await pool.query("SELECT id FROM posts WHERE id = $1", [
+        postId,
+      ]);
+
+      if (post.rows.length === 0) {
+        return res.status(404).json({ erro: "Post não encontrado." });
+      }
+    }
+
+    if (usuarioId) {
+      if (usuarioId === Number(req.usuario.id)) {
+        return res.status(400).json({
+          erro: "Você não pode denunciar seu próprio perfil.",
+        });
+      }
+
+      const usuario = await pool.query("SELECT id FROM usuarios WHERE id = $1", [
+        usuarioId,
+      ]);
+
+      if (usuario.rows.length === 0) {
+        return res.status(404).json({ erro: "Usuário não encontrado." });
+      }
+    }
+
+    const denuncia = await pool.query(
+      `
+      INSERT INTO denuncias (denunciante_id, usuario_id, post_id, motivo)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+      `,
+      [req.usuario.id, usuarioId, postId, motivoDenuncia],
+    );
+
+    res.status(201).json({
+      mensagem: "Denúncia enviada para análise.",
+      denuncia: denuncia.rows[0],
+    });
+  } catch (error) {
+    console.error("Erro ao denunciar:", error.message);
+    res.status(500).json({ erro: "Erro ao enviar denúncia." });
+  }
+});
+
+/* ================= MENSAGENS PRIVADAS ================= */
+
+app.post("/mensagens", autenticar, async (req, res) => {
+  try {
+    const { destinatario_id, mensagem } = req.body;
+    const destinatarioId = Number(destinatario_id);
+    const textoMensagem = mensagem?.trim();
+
+    if (!destinatarioId || !textoMensagem) {
+      return res.status(400).json({
+        erro: "Destinatário e mensagem são obrigatórios.",
+      });
+    }
+
+    if (destinatarioId === Number(req.usuario.id)) {
+      return res.status(400).json({
+        erro: "Você não pode enviar mensagem para você mesmo.",
+      });
+    }
+
+    if (bloquearSeNecessario(textoMensagem, res)) {
+      return;
+    }
+
+    const usuario = await pool.query("SELECT id FROM usuarios WHERE id = $1", [
+      destinatarioId,
+    ]);
+
+    if (usuario.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
+    const novaMensagem = await pool.query(
+      `
+      INSERT INTO mensagens_privadas (remetente_id, destinatario_id, mensagem)
+      VALUES ($1, $2, $3)
+      RETURNING *
+      `,
+      [req.usuario.id, destinatarioId, textoMensagem],
+    );
+
+    res.status(201).json({
+      mensagem: "Mensagem enviada com sucesso!",
+      dados: novaMensagem.rows[0],
+    });
+  } catch (error) {
+    console.error("Erro ao enviar mensagem privada:", error.message);
+    res.status(500).json({ erro: "Erro ao enviar mensagem." });
   }
 });
 

@@ -184,6 +184,17 @@ async function criarTabelas() {
         criado_em TIMESTAMP DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS exclusoes_conta (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER,
+        nome VARCHAR(150),
+        email VARCHAR(150),
+        motivo TEXT,
+        status VARCHAR(50) DEFAULT 'concluida',
+        solicitado_em TIMESTAMP DEFAULT NOW(),
+        concluido_em TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS posts (
         id SERIAL PRIMARY KEY,
         usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
@@ -254,6 +265,9 @@ async function criarTabelas() {
         descricao TEXT NOT NULL,
         categoria VARCHAR(100) DEFAULT 'Geral',
         codigo_convite VARCHAR(20) UNIQUE NOT NULL,
+        tipo VARCHAR(30) DEFAULT 'publico',
+        teste_expira_em TIMESTAMP,
+        acesso_pago BOOLEAN DEFAULT false,
         criado_em TIMESTAMP DEFAULT NOW()
       );
 
@@ -272,6 +286,16 @@ async function criarTabelas() {
         usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
         mensagem TEXT NOT NULL,
         criado_em TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS grupo_solicitacoes (
+        id SERIAL PRIMARY KEY,
+        grupo_id INTEGER REFERENCES grupos(id) ON DELETE CASCADE,
+        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        status VARCHAR(30) DEFAULT 'pendente',
+        criado_em TIMESTAMP DEFAULT NOW(),
+        atualizado_em TIMESTAMP DEFAULT NOW(),
+        UNIQUE(grupo_id, usuario_id)
       );
 
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto TEXT;
@@ -306,6 +330,12 @@ async function criarTabelas() {
       ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pendente';
 
       ALTER TABLE mensagens_privadas ADD COLUMN IF NOT EXISTS lida BOOLEAN DEFAULT false;
+
+      ALTER TABLE grupos ADD COLUMN IF NOT EXISTS tipo VARCHAR(30) DEFAULT 'publico';
+      ALTER TABLE grupos ADD COLUMN IF NOT EXISTS teste_expira_em TIMESTAMP;
+      ALTER TABLE grupos ADD COLUMN IF NOT EXISTS acesso_pago BOOLEAN DEFAULT false;
+
+      UPDATE grupos SET tipo = 'publico' WHERE tipo IS NULL;
     `);
 
     console.log("✅ Tabelas verificadas/atualizadas com sucesso!");
@@ -709,6 +739,60 @@ app.get("/me", autenticar, async (req, res) => {
   }
 });
 
+/* ================= EXCLUIR CONTA ================= */
+
+app.delete("/conta", autenticar, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { motivo } = req.body || {};
+
+    await client.query("BEGIN");
+
+    const usuario = await client.query(
+      "SELECT id, nome, email FROM usuarios WHERE id = $1",
+      [req.usuario.id],
+    );
+
+    if (usuario.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
+    await client.query(
+      `
+      INSERT INTO exclusoes_conta (
+        usuario_id,
+        nome,
+        email,
+        motivo,
+        status,
+        concluido_em
+      )
+      VALUES ($1, $2, $3, $4, 'concluida', NOW())
+      `,
+      [
+        usuario.rows[0].id,
+        usuario.rows[0].nome,
+        usuario.rows[0].email,
+        motivo?.trim() || null,
+      ],
+    );
+
+    await client.query("DELETE FROM usuarios WHERE id = $1", [req.usuario.id]);
+
+    await client.query("COMMIT");
+
+    res.json({ mensagem: "Conta excluída com sucesso." });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Erro ao excluir conta:", error.message);
+    res.status(500).json({ erro: "Erro ao excluir conta." });
+  } finally {
+    client.release();
+  }
+});
+
 /* ================= EDITAR PERFIL ================= */
 
 app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
@@ -841,7 +925,7 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
 
     if (!conteudo && !imagem) {
       return res.status(400).json({
-        erro: "Escreva algo ou envie uma imagem, video ou documento.",
+        erro: "Para publicar no PostFan, compartilhe uma ideia ou adicione uma foto, vídeo ou documento.",
       });
     }
 
@@ -1101,6 +1185,96 @@ app.post("/comentarios", autenticar, async (req, res) => {
   }
 });
 
+app.put("/comentarios/:id", autenticar, async (req, res) => {
+  try {
+    const comentarioId = Number(req.params.id);
+    const { conteudo } = req.body;
+    const textoComentario = conteudo?.trim();
+
+    if (!Number.isInteger(comentarioId) || comentarioId <= 0) {
+      return res.status(400).json({ erro: "Comentário inválido." });
+    }
+
+    if (!textoComentario) {
+      return res.status(400).json({ erro: "Digite o novo comentário." });
+    }
+
+    if (bloquearSeNecessario(textoComentario, res)) {
+      return;
+    }
+
+    const comentario = await pool.query(
+      "SELECT * FROM comentarios WHERE id = $1",
+      [comentarioId],
+    );
+
+    if (comentario.rows.length === 0) {
+      return res.status(404).json({ erro: "Comentário não encontrado." });
+    }
+
+    if (Number(comentario.rows[0].usuario_id) !== Number(req.usuario.id)) {
+      return res.status(403).json({
+        erro: "Você só pode editar seus próprios comentários.",
+      });
+    }
+
+    const atualizado = await pool.query(
+      `
+      UPDATE comentarios
+      SET conteudo = $1, texto = $1
+      WHERE id = $2
+      RETURNING *
+      `,
+      [textoComentario, comentarioId],
+    );
+
+    res.json({
+      mensagem: "Comentário atualizado com sucesso!",
+      comentario: atualizado.rows[0],
+    });
+  } catch (error) {
+    console.error("Erro ao editar comentário:", error.message);
+    res.status(500).json({ erro: "Erro ao editar comentário." });
+  }
+});
+
+app.delete("/comentarios/:id", autenticar, async (req, res) => {
+  try {
+    const comentarioId = Number(req.params.id);
+
+    if (!Number.isInteger(comentarioId) || comentarioId <= 0) {
+      return res.status(400).json({ erro: "Comentário inválido." });
+    }
+
+    const comentario = await pool.query(
+      "SELECT * FROM comentarios WHERE id = $1",
+      [comentarioId],
+    );
+
+    if (comentario.rows.length === 0) {
+      return res.status(404).json({ erro: "Comentário não encontrado." });
+    }
+
+    if (Number(comentario.rows[0].usuario_id) !== Number(req.usuario.id)) {
+      return res.status(403).json({
+        erro: "Você só pode excluir seus próprios comentários.",
+      });
+    }
+
+    await pool.query("DELETE FROM comentarios WHERE id = $1", [comentarioId]);
+
+    res.json({
+      mensagem: "Comentário excluído com sucesso!",
+      post_id: comentario.rows[0].post_id,
+    });
+  } catch (error) {
+    console.error("Erro ao excluir comentário:", error.message);
+    res.status(500).json({
+      erro: "Não foi possível excluir o comentário agora. Tente novamente em instantes.",
+    });
+  }
+});
+
 /* ================= COMPARTILHAR ================= */
 
 app.post("/compartilhar", autenticar, async (req, res) => {
@@ -1242,6 +1416,60 @@ app.post("/mensagens", autenticar, async (req, res) => {
   } catch (error) {
     console.error("Erro ao enviar mensagem privada:", error.message);
     res.status(500).json({ erro: "Erro ao enviar mensagem." });
+  }
+});
+
+app.get("/mensagens/:usuarioId", autenticar, async (req, res) => {
+  try {
+    const outroUsuarioId = Number(req.params.usuarioId);
+
+    if (!outroUsuarioId) {
+      return res.status(400).json({ erro: "Usuário inválido." });
+    }
+
+    const usuario = await pool.query("SELECT id FROM usuarios WHERE id = $1", [
+      outroUsuarioId,
+    ]);
+
+    if (usuario.rows.length === 0) {
+      return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
+    const mensagens = await pool.query(
+      `
+      SELECT
+        mp.*,
+        remetente.nome AS remetente_nome,
+        remetente.foto AS remetente_foto,
+        destinatario.nome AS destinatario_nome,
+        destinatario.foto AS destinatario_foto
+      FROM mensagens_privadas mp
+      JOIN usuarios remetente ON remetente.id = mp.remetente_id
+      JOIN usuarios destinatario ON destinatario.id = mp.destinatario_id
+      WHERE (
+        mp.remetente_id = $1 AND mp.destinatario_id = $2
+      ) OR (
+        mp.remetente_id = $2 AND mp.destinatario_id = $1
+      )
+      ORDER BY mp.criado_em ASC
+      LIMIT 100
+      `,
+      [req.usuario.id, outroUsuarioId],
+    );
+
+    await pool.query(
+      `
+      UPDATE mensagens_privadas
+      SET lida = true
+      WHERE remetente_id = $1 AND destinatario_id = $2
+      `,
+      [outroUsuarioId, req.usuario.id],
+    );
+
+    res.json(mensagens.rows);
+  } catch (error) {
+    console.error("Erro ao buscar mensagens privadas:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar mensagens." });
   }
 });
 
@@ -1549,7 +1777,8 @@ app.post("/seguir/:id", autenticar, async (req, res) => {
 
 app.post("/api/grupos", autenticar, async (req, res) => {
   try {
-    const { nome, descricao, categoria } = req.body;
+    const { nome, descricao, categoria, tipo } = req.body;
+    const tipoGrupo = tipo === "reservada" ? "reservada" : "publico";
 
     if (!nome || !descricao) {
       return res.status(400).json({
@@ -1579,11 +1808,36 @@ app.post("/api/grupos", autenticar, async (req, res) => {
 
     const grupo = await pool.query(
       `
-      INSERT INTO grupos (dono_id, nome, descricao, categoria, codigo_convite)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO grupos (
+        dono_id,
+        nome,
+        descricao,
+        categoria,
+        codigo_convite,
+        tipo,
+        teste_expira_em,
+        acesso_pago
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6::VARCHAR,
+        CASE WHEN $6::VARCHAR = 'reservada' THEN NOW() + INTERVAL '7 days' ELSE NULL END,
+        false
+      )
       RETURNING *
       `,
-      [req.usuario.id, nome, descricao, categoria || "Geral", codigo],
+      [
+        req.usuario.id,
+        nome,
+        descricao,
+        categoria || "Geral",
+        codigo,
+        tipoGrupo,
+      ],
     );
 
     const novoGrupo = grupo.rows[0];
@@ -1616,7 +1870,15 @@ app.get("/api/meus-grupos", autenticar, async (req, res) => {
         g.*,
         gm.papel,
         u.nome AS dono_nome,
-        COUNT(m.id) AS total_membros
+        COUNT(m.id) AS total_membros,
+        COALESCE(
+          (
+            SELECT COUNT(*)
+            FROM grupo_solicitacoes gs
+            WHERE gs.grupo_id = g.id AND gs.status = 'pendente'
+          ),
+          0
+        ) AS total_solicitacoes_pendentes
       FROM grupos g
       JOIN grupo_membros gm ON gm.grupo_id = g.id
       JOIN usuarios u ON u.id = g.dono_id
@@ -1639,22 +1901,38 @@ app.get("/api/meus-grupos", autenticar, async (req, res) => {
 
 app.get("/api/grupos", autenticar, async (req, res) => {
   try {
-    const grupos = await pool.query(`
+    const grupos = await pool.query(
+      `
       SELECT 
         g.id,
         g.nome,
         g.descricao,
         g.categoria,
-        g.codigo_convite,
+        g.tipo,
+        g.teste_expira_em,
+        g.acesso_pago,
         g.criado_em,
         u.nome AS dono_nome,
-        COUNT(gm.id) AS total_membros
+        COUNT(gm.id) AS total_membros,
+        EXISTS (
+          SELECT 1 FROM grupo_membros membro
+          WHERE membro.grupo_id = g.id AND membro.usuario_id = $1
+        ) AS membro,
+        EXISTS (
+          SELECT 1 FROM grupo_solicitacoes sol
+          WHERE sol.grupo_id = g.id
+          AND sol.usuario_id = $1
+          AND sol.status = 'pendente'
+        ) AS solicitacao_pendente
       FROM grupos g
       JOIN usuarios u ON u.id = g.dono_id
       LEFT JOIN grupo_membros gm ON gm.grupo_id = g.id
+      WHERE g.tipo = 'publico'
       GROUP BY g.id, u.nome
       ORDER BY g.criado_em DESC
-    `);
+      `,
+      [req.usuario.id],
+    );
 
     res.json(grupos.rows);
   } catch (error) {
@@ -1664,6 +1942,158 @@ app.get("/api/grupos", autenticar, async (req, res) => {
 });
 
 /* ================= ENTRAR COM CÓDIGO ================= */
+
+app.post("/api/grupos/:id/solicitar", autenticar, async (req, res) => {
+  try {
+    const grupoId = Number(req.params.id);
+
+    const grupo = await pool.query("SELECT * FROM grupos WHERE id = $1", [
+      grupoId,
+    ]);
+
+    if (grupo.rows.length === 0 || grupo.rows[0].tipo !== "publico") {
+      return res.status(404).json({ erro: "Grupo público não encontrado." });
+    }
+
+    if (Number(grupo.rows[0].dono_id) === Number(req.usuario.id)) {
+      return res.status(400).json({ erro: "Você já administra esse grupo." });
+    }
+
+    const membro = await pool.query(
+      "SELECT id FROM grupo_membros WHERE grupo_id = $1 AND usuario_id = $2",
+      [grupoId, req.usuario.id],
+    );
+
+    if (membro.rows.length > 0) {
+      return res.json({ mensagem: "Você já participa desse grupo." });
+    }
+
+    const solicitacao = await pool.query(
+      `
+      INSERT INTO grupo_solicitacoes (grupo_id, usuario_id, status)
+      VALUES ($1, $2, 'pendente')
+      ON CONFLICT (grupo_id, usuario_id)
+      DO UPDATE SET status = 'pendente', atualizado_em = NOW()
+      RETURNING *
+      `,
+      [grupoId, req.usuario.id],
+    );
+
+    res.status(201).json({
+      mensagem: "Solicitação enviada ao administrador do grupo.",
+      solicitacao: solicitacao.rows[0],
+    });
+  } catch (error) {
+    console.error("Erro ao solicitar entrada:", error.message);
+    res.status(500).json({ erro: "Erro ao solicitar entrada no grupo." });
+  }
+});
+
+app.get("/api/grupos/:id/solicitacoes", autenticar, async (req, res) => {
+  try {
+    const grupoId = Number(req.params.id);
+
+    const grupo = await pool.query("SELECT * FROM grupos WHERE id = $1", [
+      grupoId,
+    ]);
+
+    if (grupo.rows.length === 0) {
+      return res.status(404).json({ erro: "Grupo não encontrado." });
+    }
+
+    if (Number(grupo.rows[0].dono_id) !== Number(req.usuario.id)) {
+      return res.status(403).json({
+        erro: "Apenas o administrador pode ver as solicitações.",
+      });
+    }
+
+    const solicitacoes = await pool.query(
+      `
+      SELECT gs.*, u.nome, u.email, u.foto
+      FROM grupo_solicitacoes gs
+      JOIN usuarios u ON u.id = gs.usuario_id
+      WHERE gs.grupo_id = $1 AND gs.status = 'pendente'
+      ORDER BY gs.criado_em ASC
+      `,
+      [grupoId],
+    );
+
+    res.json(solicitacoes.rows);
+  } catch (error) {
+    console.error("Erro ao buscar solicitações:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar solicitações." });
+  }
+});
+
+app.post("/api/grupos/:id/solicitacoes/:solicitacaoId", autenticar, async (req, res) => {
+  try {
+    const grupoId = Number(req.params.id);
+    const solicitacaoId = Number(req.params.solicitacaoId);
+    const { acao } = req.body;
+
+    if (!["aprovar", "recusar"].includes(acao)) {
+      return res.status(400).json({ erro: "Ação inválida." });
+    }
+
+    const grupo = await pool.query("SELECT * FROM grupos WHERE id = $1", [
+      grupoId,
+    ]);
+
+    if (grupo.rows.length === 0) {
+      return res.status(404).json({ erro: "Grupo não encontrado." });
+    }
+
+    if (Number(grupo.rows[0].dono_id) !== Number(req.usuario.id)) {
+      return res.status(403).json({
+        erro: "Apenas o administrador pode responder solicitações.",
+      });
+    }
+
+    const solicitacao = await pool.query(
+      `
+      SELECT * FROM grupo_solicitacoes
+      WHERE id = $1 AND grupo_id = $2 AND status = 'pendente'
+      `,
+      [solicitacaoId, grupoId],
+    );
+
+    if (solicitacao.rows.length === 0) {
+      return res.status(404).json({ erro: "Solicitação não encontrada." });
+    }
+
+    const novoStatus = acao === "aprovar" ? "aprovada" : "recusada";
+
+    await pool.query(
+      `
+      UPDATE grupo_solicitacoes
+      SET status = $1, atualizado_em = NOW()
+      WHERE id = $2
+      `,
+      [novoStatus, solicitacaoId],
+    );
+
+    if (acao === "aprovar") {
+      await pool.query(
+        `
+        INSERT INTO grupo_membros (grupo_id, usuario_id, papel)
+        VALUES ($1, $2, 'membro')
+        ON CONFLICT (grupo_id, usuario_id) DO NOTHING
+        `,
+        [grupoId, solicitacao.rows[0].usuario_id],
+      );
+    }
+
+    res.json({
+      mensagem:
+        acao === "aprovar"
+          ? "Solicitação aprovada. O usuário já pode acessar o grupo."
+          : "Solicitação recusada.",
+    });
+  } catch (error) {
+    console.error("Erro ao responder solicitação:", error.message);
+    res.status(500).json({ erro: "Erro ao responder solicitação." });
+  }
+});
 
 app.post("/api/grupos/entrar", autenticar, async (req, res) => {
   try {
@@ -1680,6 +2110,22 @@ app.post("/api/grupos/entrar", autenticar, async (req, res) => {
 
     if (grupo.rows.length === 0) {
       return res.status(404).json({ erro: "Código inválido." });
+    }
+
+    if (grupo.rows[0].tipo !== "reservada") {
+      return res.status(400).json({
+        erro: "Esse código pertence a um grupo público. Solicite entrada pelo botão do grupo.",
+      });
+    }
+
+    if (
+      grupo.rows[0].teste_expira_em &&
+      new Date(grupo.rows[0].teste_expira_em) < new Date() &&
+      !grupo.rows[0].acesso_pago
+    ) {
+      return res.status(402).json({
+        erro: "O período gratuito dessa Sala Reservada expirou. Em breve será necessário liberar o acesso pago.",
+      });
     }
 
     const grupoId = grupo.rows[0].id;
@@ -1740,6 +2186,18 @@ app.get("/api/grupos/:id", autenticar, async (req, res) => {
     if (grupo.rows.length === 0) {
       return res.status(403).json({
         erro: "Você não tem acesso a esse grupo.",
+      });
+    }
+
+    if (
+      grupo.rows[0].tipo === "reservada" &&
+      grupo.rows[0].papel !== "admin" &&
+      grupo.rows[0].teste_expira_em &&
+      new Date(grupo.rows[0].teste_expira_em) < new Date() &&
+      !grupo.rows[0].acesso_pago
+    ) {
+      return res.status(402).json({
+        erro: "O período gratuito dessa Sala Reservada expirou. Em breve será necessário liberar o acesso pago.",
       });
     }
 

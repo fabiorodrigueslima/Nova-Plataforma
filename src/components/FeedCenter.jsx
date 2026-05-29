@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+    FiAlertCircle,
     FiEdit2,
     FiFileText,
     FiFilm,
@@ -15,6 +16,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { analisarConteudo } from "../utils/moderacao";
+import { useNotification } from "../context/notificationStore";
 import "../styles/style.css";
 
 function Avatar({ className = "post-avatar", foto, nome, onClick }) {
@@ -39,6 +41,7 @@ function Avatar({ className = "post-avatar", foto, nome, onClick }) {
 
 export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }) {
     const navigate = useNavigate();
+    const dialog = useNotification();
     const usuario = JSON.parse(localStorage.getItem("usuario") || "{}");
 
     const [texto, setTexto] = useState("");
@@ -55,6 +58,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
     const [loadingPosts, setLoadingPosts] = useState(true);
     const [publicando, setPublicando] = useState(false);
     const [avisoModeracao, setAvisoModeracao] = useState("");
+    const [avisoPublicacao, setAvisoPublicacao] = useState("");
 
     async function carregarPosts() {
         try {
@@ -78,6 +82,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
 
         setArquivo(file);
         setPreview(URL.createObjectURL(file));
+        setAvisoPublicacao("");
 
         if (file.type.startsWith("image")) setTipoArquivo("imagem");
         else if (file.type.startsWith("video")) setTipoArquivo("video");
@@ -96,14 +101,23 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
         if (moderacao.aprovado) return true;
 
         if (usarAviso) setAvisoModeracao(moderacao.motivo);
-        else alert(moderacao.motivo);
+        else {
+            dialog.notify({
+                type: "warning",
+                title: "Conteúdo em revisão",
+                message: moderacao.motivo,
+            });
+        }
 
         return false;
     }
 
     async function publicar() {
         if (!texto.trim() && !arquivo) {
-            alert("Escreva algo ou escolha uma foto, vídeo ou documento.");
+            const primeiroNome = usuario?.nome?.split(" ")?.[0] || "Olá";
+            setAvisoPublicacao(
+                `${primeiroNome}, para publicar no PostFan, compartilhe uma ideia ou adicione uma foto, vídeo ou documento.`,
+            );
             return;
         }
 
@@ -112,6 +126,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
         try {
             setPublicando(true);
             setAvisoModeracao("");
+            setAvisoPublicacao("");
 
             const formData = new FormData();
             formData.append("conteudo", texto.trim());
@@ -130,7 +145,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             removerArquivo();
         } catch (error) {
             console.error("Erro ao publicar:", error);
-            alert(error.response?.data?.erro || "Erro ao publicar post.");
+            dialog.notify({
+                type: "danger",
+                title: "Publicação não enviada",
+                message: error.response?.data?.erro || "Erro ao publicar post.",
+            });
         } finally {
             setPublicando(false);
         }
@@ -156,19 +175,35 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             );
         } catch (error) {
             console.error("Erro ao curtir post:", error);
-            alert(error.response?.data?.erro || "Erro ao curtir post.");
+            dialog.notify({
+                type: "danger",
+                title: "Curtida não registrada",
+                message: error.response?.data?.erro || "Erro ao curtir post.",
+            });
         }
     }
 
     async function excluirPost(id) {
-        if (!window.confirm("Deseja excluir este post?")) return;
+        const confirmado = await dialog.confirm({
+            type: "danger",
+            title: "Excluir publicação",
+            message:
+                "Esta publicação será removida do seu perfil e do feed. Essa ação não pode ser desfeita.",
+            confirmText: "Excluir",
+        });
+
+        if (!confirmado) return;
 
         try {
             await api.delete(`/posts/${id}`);
             setPosts((prev) => prev.filter((post) => post.id !== id));
         } catch (error) {
             console.error("Erro ao excluir post:", error);
-            alert(error.response?.data?.erro || "Erro ao excluir post.");
+            dialog.notify({
+                type: "danger",
+                title: "Publicação não excluída",
+                message: error.response?.data?.erro || "Erro ao excluir post.",
+            });
         }
     }
 
@@ -179,7 +214,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
 
     async function salvarEdicao(id) {
         if (!textoEditado.trim()) {
-            alert("O texto não pode ficar vazio.");
+            dialog.notify({
+                type: "warning",
+                title: "Texto obrigatório",
+                message: "Adicione uma mensagem antes de salvar a publicação.",
+            });
             return;
         }
 
@@ -201,7 +240,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             setTextoEditado("");
         } catch (error) {
             console.error("Erro ao editar post:", error);
-            alert(error.response?.data?.erro || "Erro ao editar post.");
+            dialog.notify({
+                type: "danger",
+                title: "Edição não salva",
+                message: error.response?.data?.erro || "Erro ao editar post.",
+            });
         }
     }
 
@@ -249,7 +292,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             setNovoComentario((prev) => ({ ...prev, [id]: "" }));
         } catch (error) {
             console.error("Erro ao comentar:", error);
-            alert(error.response?.data?.erro || "Erro ao comentar.");
+            dialog.notify({
+                type: "danger",
+                title: "Comentário não enviado",
+                message: error.response?.data?.erro || "Erro ao comentar.",
+            });
         }
     }
 
@@ -268,7 +315,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             navigator.share({ title: "PostFan", text: textoCompartilhar });
         } else {
             navigator.clipboard.writeText(textoCompartilhar);
-            alert("Texto do post copiado para compartilhar.");
+            dialog.notify({
+                type: "success",
+                title: "Conteúdo copiado",
+                message: "A publicação foi copiada para você compartilhar onde quiser.",
+            });
         }
     }
 
@@ -286,6 +337,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
                         onChange={(e) => {
                             setTexto(e.target.value);
                             if (avisoModeracao) setAvisoModeracao("");
+                            if (avisoPublicacao) setAvisoPublicacao("");
                         }}
                     />
                 </div>
@@ -299,6 +351,16 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
                     <div className="moderation-alert" role="alert">
                         <FiXCircle aria-hidden="true" />
                         <span>{avisoModeracao}</span>
+                    </div>
+                )}
+
+                {avisoPublicacao && (
+                    <div className="publish-alert" role="alert">
+                        <FiAlertCircle aria-hidden="true" />
+                        <div>
+                            <strong>Publicação incompleta</strong>
+                            <span>{avisoPublicacao}</span>
+                        </div>
                     </div>
                 )}
 

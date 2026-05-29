@@ -10,6 +10,7 @@ export default function SalaVirtual() {
     const [aba, setAba] = useState("meus");
     const [meusGrupos, setMeusGrupos] = useState([]);
     const [grupos, setGrupos] = useState([]);
+    const [solicitacoes, setSolicitacoes] = useState({});
     const [codigo, setCodigo] = useState("");
 
     const [modalExcluir, setModalExcluir] = useState(false);
@@ -30,7 +31,18 @@ export default function SalaVirtual() {
     async function carregarMeusGrupos() {
         try {
             const res = await api.get("/api/meus-grupos");
-            setMeusGrupos(Array.isArray(res.data) ? res.data : []);
+            const lista = Array.isArray(res.data) ? res.data : [];
+            setMeusGrupos(lista);
+
+            const admins = lista.filter((grupo) => grupo.papel === "admin" && grupo.tipo === "publico");
+            const respostas = await Promise.all(
+                admins.map(async (grupo) => {
+                    const solicitacoesRes = await api.get(`/api/grupos/${grupo.id}/solicitacoes`);
+                    return [grupo.id, Array.isArray(solicitacoesRes.data) ? solicitacoesRes.data : []];
+                }),
+            );
+
+            setSolicitacoes(Object.fromEntries(respostas));
         } catch (error) {
             console.error("Erro ao carregar meus grupos:", error);
         }
@@ -109,7 +121,7 @@ export default function SalaVirtual() {
         }
 
         try {
-            const res = await api.post("/api/grupos", form);
+            const res = await api.post("/api/grupos", { ...form, tipo: "publico" });
 
             setForm({
                 nome: "",
@@ -124,8 +136,9 @@ export default function SalaVirtual() {
 
             abrirModalSucesso(
                 "Grupo criado com sucesso!",
-                "Seu grupo foi criado. Compartilhe o código abaixo apenas com as pessoas que você deseja convidar.",
-                res.data.grupo?.codigo_convite
+                "Seu grupo foi criado gratuitamente. Agora os usuários poderão solicitar entrada, e você decide quem participa.",
+                "",
+                res.data.grupo?.id
             );
         } catch (error) {
             console.error("Erro ao criar grupo:", error);
@@ -189,6 +202,87 @@ export default function SalaVirtual() {
                 "Erro ao excluir grupo",
                 error.response?.data?.erro ||
                 "Aconteceu um problema ao excluir o grupo. Tente novamente."
+            );
+        }
+    }
+
+    async function criarSalaReservada(e) {
+        e.preventDefault();
+
+        const moderacao = analisarConteudo(
+            `${form.nome} ${form.descricao} ${form.categoria}`
+        );
+
+        if (!moderacao.aprovado) {
+            abrirModalSucesso("Revise a sala reservada", moderacao.motivo);
+            return;
+        }
+
+        try {
+            const res = await api.post("/api/grupos", { ...form, tipo: "reservada" });
+
+            setForm({
+                nome: "",
+                descricao: "",
+                categoria: "",
+            });
+
+            setAba("meus");
+
+            await carregarMeusGrupos();
+            await carregarGrupos();
+
+            abrirModalSucesso(
+                "Sala Reservada criada!",
+                "A sala tem 7 dias de teste gratuito. Depois desse período, o acesso será preparado para pagamento.",
+                res.data.grupo?.codigo_convite,
+                res.data.grupo?.id
+            );
+        } catch (error) {
+            console.error("Erro ao criar sala reservada:", error);
+
+            abrirModalSucesso(
+                "Erro ao criar sala reservada",
+                error.response?.data?.erro ||
+                "Aconteceu um problema ao criar a sala reservada. Tente novamente."
+            );
+        }
+    }
+
+    async function solicitarEntrada(grupoId) {
+        try {
+            await api.post(`/api/grupos/${grupoId}/solicitar`);
+            await carregarGrupos();
+
+            abrirModalSucesso(
+                "Solicitação enviada!",
+                "O administrador do grupo recebeu seu pedido e poderá liberar sua entrada."
+            );
+        } catch (error) {
+            abrirModalSucesso(
+                "Solicitação não enviada",
+                error.response?.data?.erro ||
+                "Aconteceu um problema ao solicitar entrada no grupo."
+            );
+        }
+    }
+
+    async function responderSolicitacao(grupoId, solicitacaoId, acao) {
+        try {
+            await api.post(`/api/grupos/${grupoId}/solicitacoes/${solicitacaoId}`, { acao });
+            await carregarMeusGrupos();
+
+            abrirModalSucesso(
+                acao === "aprovar" ? "Entrada aprovada!" : "Solicitação recusada",
+                acao === "aprovar"
+                    ? "O usuário já pode acessar o grupo."
+                    : "A solicitação foi recusada."
+            );
+        } catch (error) {
+            abrirModalSucesso(
+                "Não foi possível responder",
+                error.response?.data?.erro ||
+                "Aconteceu um problema ao responder a solicitação."
             );
         }
     }
@@ -258,13 +352,6 @@ export default function SalaVirtual() {
                     </button>
 
                     <button
-                        className={aba === "entrar" ? "active" : ""}
-                        onClick={() => setAba("entrar")}
-                    >
-                        Entrar com Código
-                    </button>
-
-                    <button
                         className={aba === "reservada" ? "active" : ""}
                         onClick={() => setAba("reservada")}
                     >
@@ -303,7 +390,7 @@ export default function SalaVirtual() {
                                         <small>👥 {grupo.total_membros || 1} membros</small>
                                         <small>👑 {grupo.papel}</small>
 
-                                        {grupo.papel === "admin" && (
+                                        {grupo.papel === "admin" && grupo.tipo === "reservada" && (
                                             <div className="grupo-codigo">
                                                 Código: <strong>{grupo.codigo_convite}</strong>
 
@@ -318,6 +405,56 @@ export default function SalaVirtual() {
                                                 </button>
                                             </div>
                                         )}
+
+                                        {grupo.tipo === "reservada" && (
+                                            <p className="grupo-aviso">
+                                                Teste gratuito: {grupo.teste_expira_em
+                                                    ? new Date(grupo.teste_expira_em).toLocaleDateString("pt-BR")
+                                                    : "7 dias"}
+                                            </p>
+                                        )}
+
+                                        {grupo.papel === "admin" &&
+                                            grupo.tipo === "publico" &&
+                                            (solicitacoes[grupo.id] || []).length > 0 && (
+                                                <div className="grupo-solicitacoes">
+                                                    <strong>Solicitações pendentes</strong>
+
+                                                    {(solicitacoes[grupo.id] || []).map((solicitacao) => (
+                                                        <div className="grupo-solicitacao" key={solicitacao.id}>
+                                                            <span>{solicitacao.nome}</span>
+
+                                                            <div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        responderSolicitacao(
+                                                                            grupo.id,
+                                                                            solicitacao.id,
+                                                                            "aprovar"
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Aprovar
+                                                                </button>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        responderSolicitacao(
+                                                                            grupo.id,
+                                                                            solicitacao.id,
+                                                                            "recusar"
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    Recusar
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
 
                                         <div className="grupo-actions">
                                             <button
@@ -362,9 +499,19 @@ export default function SalaVirtual() {
                                         <small>Criado por {grupo.dono_nome}</small>
                                         <small>👥 {grupo.total_membros || 0} membros</small>
 
-                                        <p className="grupo-aviso">
-                                            🔒 Para entrar, peça o código ao administrador.
-                                        </p>
+                                        {grupo.membro ? (
+                                            <button onClick={() => navigate(`/grupo/${grupo.id}`)}>
+                                                Acessar
+                                            </button>
+                                        ) : grupo.solicitacao_pendente ? (
+                                            <p className="grupo-aviso">
+                                                Solicitação enviada. Aguarde o administrador aprovar.
+                                            </p>
+                                        ) : (
+                                            <button onClick={() => solicitarEntrada(grupo.id)}>
+                                                Solicitar entrada
+                                            </button>
+                                        )}
                                     </article>
                                 ))}
                             </div>
@@ -416,60 +563,79 @@ export default function SalaVirtual() {
                     </div>
                 )}
 
-                {aba === "entrar" && (
-                    <div className="sala-box">
-                        <h2>Entrar com Código</h2>
-
-                        <form className="sala-form" onSubmit={entrarComCodigo}>
-                            <label>
-                                Código do grupo
-                                <input
-                                    type="text"
-                                    value={codigo}
-                                    onChange={(e) => setCodigo(e.target.value)}
-                                    placeholder="Digite o código enviado pelo administrador"
-                                    required
-                                />
-                            </label>
-
-                            <button type="submit">Entrar no Grupo</button>
-                        </form>
-                    </div>
-                )}
-
                 {aba === "reservada" && (
                     <div className="sala-box">
                         <h2>Sala Reservada</h2>
 
                         <p className="sala-reservada-texto">
-                            A Sala Reservada é um espaço privado. Somente pessoas
-                            autorizadas podem entrar.
+                            A Sala Reservada continua privada e só permite entrada com código.
+                            Neste teste, o acesso fica gratuito por 7 dias. Depois, a sala
+                            será preparada para liberação paga.
                         </p>
 
                         <p className="sala-reservada-texto">
-                            O administrador cria o grupo e compartilha o código
-                            apenas com quem deseja convidar.
+                            Criar grupo público é gratuito. Criar Sala Reservada também
+                            está liberado neste período de teste, mas o acesso dos membros
+                            será limitado pelo prazo gratuito.
                         </p>
 
-                        <p className="sala-reservada-texto">
-                            Esse ambiente é ideal para estudos, debates reservados,
-                            amizades, troca de ideias e conversas mais próximas.
-                        </p>
+                        <div className="sala-reservada-dupla">
+                            <form className="sala-form" onSubmit={criarSalaReservada}>
+                                <h3>Criar Sala Reservada</h3>
 
-                        <div className="sala-reservada-actions">
-                            <button
-                                className="sala-reservada-btn"
-                                onClick={() => setAba("criar")}
-                            >
-                                Criar Sala Reservada
-                            </button>
+                                <label>
+                                    Nome da sala
+                                    <input
+                                        type="text"
+                                        name="nome"
+                                        value={form.nome}
+                                        onChange={handleChange}
+                                        placeholder="Ex: Estudos reservados"
+                                        required
+                                    />
+                                </label>
 
-                            <button
-                                className="sala-reservada-btn secundario"
-                                onClick={() => setAba("entrar")}
-                            >
-                                Entrar com Código
-                            </button>
+                                <label>
+                                    Categoria
+                                    <input
+                                        type="text"
+                                        name="categoria"
+                                        value={form.categoria}
+                                        onChange={handleChange}
+                                        placeholder="Ex: Estudos, debate, amizade..."
+                                    />
+                                </label>
+
+                                <label>
+                                    Descrição
+                                    <textarea
+                                        name="descricao"
+                                        value={form.descricao}
+                                        onChange={handleChange}
+                                        placeholder="Explique o objetivo da sala reservada..."
+                                        required
+                                    />
+                                </label>
+
+                                <button type="submit">Criar Sala Reservada</button>
+                            </form>
+
+                            <form className="sala-form" onSubmit={entrarComCodigo}>
+                                <h3>Entrar com Código</h3>
+
+                                <label>
+                                    Código da Sala Reservada
+                                    <input
+                                        type="text"
+                                        value={codigo}
+                                        onChange={(e) => setCodigo(e.target.value)}
+                                        placeholder="Digite o código enviado pelo administrador"
+                                        required
+                                    />
+                                </label>
+
+                                <button type="submit">Entrar na Sala Reservada</button>
+                            </form>
                         </div>
                     </div>
                 )}
@@ -511,7 +677,9 @@ export default function SalaVirtual() {
             {modalSucesso && (
                 <div className="modal-overlay">
                     <div className="modal-sucesso">
-                        <div className="modal-sucesso-icon">✅</div>
+                        <div className="modal-sucesso-icon">
+                            {sucessoTitulo.toLowerCase().includes("erro") ? "!" : "✓"}
+                        </div>
 
                         <h2>{sucessoTitulo}</h2>
 

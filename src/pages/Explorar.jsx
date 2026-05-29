@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { useNotification } from "../context/notificationStore";
 import "../styles/style.css";
 
 export default function Explorar() {
   const navigate = useNavigate();
+  const dialog = useNotification();
 
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,11 @@ export default function Explorar() {
         )
       );
     } catch (error) {
-      alert(error.response?.data?.erro || "Erro ao seguir usuário.");
+      dialog.notify({
+        type: "danger",
+        title: "Não foi possível seguir",
+        message: error.response?.data?.erro || "Erro ao seguir usuário.",
+      });
     }
   }
 

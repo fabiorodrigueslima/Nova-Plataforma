@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/style.css";
 import api from "../services/api";
+import { useNotification } from "../context/notificationStore";
 
 export default function EditarPerfil() {
     const navigate = useNavigate();
+    const dialog = useNotification();
 
     const usuarioLocal = JSON.parse(localStorage.getItem("usuario"));
 
@@ -42,7 +44,11 @@ export default function EditarPerfil() {
             setPreview(data.foto || "");
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
-            alert("Erro ao carregar dados do perfil.");
+            dialog.notify({
+                type: "danger",
+                title: "Perfil indisponível",
+                message: "Não foi possível carregar seus dados agora. Tente novamente em instantes.",
+            });
         } finally {
             setCarregando(false);
         }
@@ -103,7 +109,11 @@ export default function EditarPerfil() {
             setModalSucesso(true);
         } catch (error) {
             console.error("Erro ao salvar perfil:", error);
-            alert(error.response?.data?.erro || "Erro ao salvar perfil.");
+            dialog.notify({
+                type: "danger",
+                title: "Alterações não salvas",
+                message: error.response?.data?.erro || "Erro ao salvar perfil.",
+            });
         } finally {
             setLoading(false);
         }

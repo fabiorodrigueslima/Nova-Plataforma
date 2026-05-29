@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { FiRadio, FiUserCheck, FiUserPlus, FiUsers } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { useNotification } from "../context/notificationStore";
 import "../styles/style.css";
 
 function Avatar({ className, foto, nome, onClick, online = false }) {
@@ -28,6 +29,7 @@ function Avatar({ className, foto, nome, onClick, online = false }) {
 
 export default function RightPanel({ posts = [] }) {
   const navigate = useNavigate();
+  const dialog = useNotification();
   const token = localStorage.getItem("token");
 
   const [usuario, setUsuario] = useState(() => JSON.parse(localStorage.getItem("usuario") || "{}"));
@@ -129,7 +131,11 @@ export default function RightPanel({ posts = [] }) {
       await Promise.all([carregarStats(usuario?.id), carregarRede(), carregarSugestoes(), carregarOnline()]);
     } catch (error) {
       console.error("Erro ao seguir:", error);
-      alert(error.response?.data?.erro || "Erro ao seguir usuário.");
+      dialog.notify({
+        type: "danger",
+        title: "Não foi possível seguir",
+        message: error.response?.data?.erro || "Erro ao seguir usuário.",
+      });
     }
   }
 

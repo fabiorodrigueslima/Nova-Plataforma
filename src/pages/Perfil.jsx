@@ -10,11 +10,13 @@ import {
 } from "react-icons/fi";
 import api from "../services/api";
 import { analisarConteudo } from "../utils/moderacao";
+import { useNotification } from "../context/notificationStore";
 import "../styles/style.css";
 
 export default function Perfil() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const dialog = useNotification();
 
     const usuarioLogado = JSON.parse(localStorage.getItem("usuario") || "null");
     const token = localStorage.getItem("token");
@@ -36,9 +38,103 @@ export default function Perfil() {
     const [comentarioAberto, setComentarioAberto] = useState(null);
     const [comentariosPost, setComentariosPost] = useState({});
     const [novoComentario, setNovoComentario] = useState({});
+    const [comentarioEditando, setComentarioEditando] = useState(null);
+    const [textoComentarioEditado, setTextoComentarioEditado] = useState("");
     const [mensagemAberta, setMensagemAberta] = useState(false);
     const [mensagemTexto, setMensagemTexto] = useState("");
+    const [mensagensChat, setMensagensChat] = useState([]);
     const [enviandoMensagem, setEnviandoMensagem] = useState(false);
+    const [postAberto, setPostAberto] = useState(null);
+
+    const fotosDoPerfil = posts.filter((post) => isImagePost(post));
+    const videosDoPerfil = posts.filter((post) => isVideoPost(post));
+
+    function isImagePost(post) {
+        const tipo = post.tipo_arquivo || "";
+        const url = post.imagem || "";
+
+        return Boolean(url) && (tipo.startsWith("image/") || /\.(png|jpe?g|webp|gif)$/i.test(url));
+    }
+
+    function isVideoPost(post) {
+        const tipo = post.tipo_arquivo || "";
+        const url = post.imagem || "";
+
+        return Boolean(url) && (tipo.startsWith("video/") || /\.(mp4|webm|mov|ogg)$/i.test(url));
+    }
+
+    function renderPostMedia(post, className = "perfil-post-media-pro") {
+        if (!post.imagem) return null;
+
+        if (isVideoPost(post)) {
+            return (
+                <video
+                    className={className}
+                    src={post.imagem}
+                    controls
+                    preload="metadata"
+                    onClick={(e) => e.stopPropagation()}
+                />
+            );
+        }
+
+        if (isImagePost(post)) {
+            return (
+                <img
+                    className={className}
+                    src={post.imagem}
+                    alt="Post"
+                    onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                    }}
+                />
+            );
+        }
+
+        return (
+            <a
+                className="perfil-document-link-pro"
+                href={post.imagem}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+            >
+                Abrir documento publicado
+            </a>
+        );
+    }
+
+    function renderMediaGrid(lista, tipo) {
+        if (lista.length === 0) {
+            return (
+                <div className="perfil-empty-pro">
+                    <span>{tipo === "fotos" ? "🖼️" : "🎬"}</span>
+                    <h3>{tipo === "fotos" ? "Nenhuma foto publicada" : "Nenhum vídeo publicado"}</h3>
+                    <p>
+                        {tipo === "fotos"
+                            ? "Quando este usuário publicar fotos, elas aparecerão aqui."
+                            : "Quando este usuário publicar vídeos, eles aparecerão aqui."}
+                    </p>
+                </div>
+            );
+        }
+
+        return (
+            <div className="perfil-media-grid-pro">
+                {lista.map((post) => (
+                    <button
+                        type="button"
+                        className="perfil-media-item-pro"
+                        key={post.id}
+                        onClick={() => abrirPost(post)}
+                    >
+                        {renderPostMedia(post, "perfil-media-preview-pro")}
+                        {post.conteudo && <span>{post.conteudo}</span>}
+                    </button>
+                ))}
+            </div>
+        );
+    }
 
     async function carregarPerfil() {
         try {
@@ -63,14 +159,22 @@ export default function Perfil() {
 
     function validarTexto(texto, mensagemPadrao) {
         if (!texto?.trim()) {
-            alert(mensagemPadrao);
+            dialog.notify({
+                type: "warning",
+                title: "Ação incompleta",
+                message: mensagemPadrao,
+            });
             return false;
         }
 
         const moderacao = analisarConteudo(texto);
 
         if (!moderacao.aprovado) {
-            alert(moderacao.motivo);
+            dialog.notify({
+                type: "warning",
+                title: "Conteúdo em revisão",
+                message: moderacao.motivo,
+            });
             return false;
         }
 
@@ -91,7 +195,11 @@ export default function Perfil() {
             }));
         } catch (error) {
             console.error("Erro ao seguir:", error);
-            alert(error.response?.data?.erro || "Erro ao seguir usuário.");
+            dialog.notify({
+                type: "danger",
+                title: "Não foi possível seguir",
+                message: error.response?.data?.erro || "Erro ao seguir usuário.",
+            });
         }
     }
 
@@ -117,7 +225,28 @@ export default function Perfil() {
             );
         } catch (error) {
             console.error("Erro ao curtir post:", error);
-            alert(error.response?.data?.erro || "Erro ao curtir post.");
+            dialog.notify({
+                type: "danger",
+                title: "Curtida não registrada",
+                message: error.response?.data?.erro || "Erro ao curtir post.",
+            });
+        }
+    }
+
+    async function carregarComentarios(idPost) {
+        try {
+            const res = await api.get(`/comentarios?post_id=${idPost}`);
+            setComentariosPost((prev) => ({
+                ...prev,
+                [idPost]: Array.isArray(res.data) ? res.data : [],
+            }));
+        } catch (error) {
+            console.error("Erro ao carregar comentários:", error);
+            dialog.notify({
+                type: "danger",
+                title: "Comentários indisponíveis",
+                message: error.response?.data?.erro || "Erro ao carregar comentários.",
+            });
         }
     }
 
@@ -128,17 +257,7 @@ export default function Perfil() {
         }
 
         setComentarioAberto(idPost);
-
-        try {
-            const res = await api.get(`/comentarios?post_id=${idPost}`);
-            setComentariosPost((prev) => ({
-                ...prev,
-                [idPost]: Array.isArray(res.data) ? res.data : [],
-            }));
-        } catch (error) {
-            console.error("Erro ao carregar comentários:", error);
-            alert(error.response?.data?.erro || "Erro ao carregar comentários.");
-        }
+        carregarComentarios(idPost);
     }
 
     async function comentar(idPost) {
@@ -168,11 +287,179 @@ export default function Perfil() {
                 ),
             );
 
+            setPostAberto((prev) =>
+                prev?.id === idPost
+                    ? {
+                        ...prev,
+                        total_comentarios: Number(prev.total_comentarios || 0) + 1,
+                    }
+                    : prev,
+            );
+
             setNovoComentario((prev) => ({ ...prev, [idPost]: "" }));
         } catch (error) {
             console.error("Erro ao comentar:", error);
-            alert(error.response?.data?.erro || "Erro ao comentar.");
+            dialog.notify({
+                type: "danger",
+                title: "Comentário não enviado",
+                message: error.response?.data?.erro || "Erro ao comentar.",
+            });
         }
+    }
+
+    function iniciarEdicaoComentario(comentario) {
+        setComentarioEditando(comentario.id);
+        setTextoComentarioEditado(comentario.conteudo || comentario.texto || "");
+    }
+
+    function cancelarEdicaoComentario() {
+        setComentarioEditando(null);
+        setTextoComentarioEditado("");
+    }
+
+    async function salvarComentario(idPost, comentarioId) {
+        if (!validarTexto(textoComentarioEditado, "Digite o novo comentário.")) return;
+
+        try {
+            const res = await api.put(`/comentarios/${comentarioId}`, {
+                conteudo: textoComentarioEditado.trim(),
+            });
+
+            const comentarioAtualizado = res.data.comentario || res.data;
+
+            setComentariosPost((prev) => ({
+                ...prev,
+                [idPost]: (prev[idPost] || []).map((comentario) =>
+                    comentario.id === comentarioId
+                        ? {
+                            ...comentario,
+                            ...comentarioAtualizado,
+                            conteudo: comentarioAtualizado.conteudo || textoComentarioEditado.trim(),
+                        }
+                        : comentario,
+                ),
+            }));
+
+            cancelarEdicaoComentario();
+        } catch (error) {
+            console.error("Erro ao editar comentário:", error);
+            dialog.notify({
+                type: "danger",
+                title: "Comentário não atualizado",
+                message: error.response?.data?.erro || "Erro ao editar comentário.",
+            });
+        }
+    }
+
+    async function excluirComentario(idPost, comentarioId) {
+        if (!comentarioId) {
+            dialog.notify({
+                type: "danger",
+                title: "Comentário inválido",
+                message: "Não foi possível identificar esse comentário para exclusão.",
+            });
+            return;
+        }
+
+        const confirmado = await dialog.confirm({
+            type: "danger",
+            title: "Excluir comentário",
+            message: "Este comentário será removido da publicação. Essa ação não pode ser desfeita.",
+            confirmText: "Excluir",
+        });
+
+        if (!confirmado) return;
+
+        try {
+            await api.delete(`/comentarios/${comentarioId}`);
+
+            setComentariosPost((prev) => ({
+                ...prev,
+                [idPost]: (prev[idPost] || []).filter((comentario) => comentario.id !== comentarioId),
+            }));
+
+            setPosts((prev) =>
+                prev.map((post) =>
+                    post.id === idPost
+                        ? {
+                            ...post,
+                            total_comentarios: Math.max(Number(post.total_comentarios || 0) - 1, 0),
+                        }
+                        : post,
+                ),
+            );
+
+            setPostAberto((prev) =>
+                prev?.id === idPost
+                    ? {
+                        ...prev,
+                        total_comentarios: Math.max(Number(prev.total_comentarios || 0) - 1, 0),
+                    }
+                    : prev,
+            );
+        } catch (error) {
+            console.error("Erro ao excluir comentário:", error);
+            dialog.notify({
+                type: "danger",
+                title: "Comentário não excluído",
+                message:
+                    error.response?.data?.erro ||
+                    "Não foi possível excluir o comentário agora. Tente novamente em instantes.",
+            });
+        }
+    }
+
+    function renderComentario(comentario, idPost, mostrarData = true) {
+        const meuComentario = Number(comentario.usuario_id) === Number(usuarioLogado?.id);
+        const emEdicao = comentarioEditando === comentario.id;
+
+        return (
+            <div className="comment-item perfil-comment-item-pro" key={comentario.id}>
+                <div className="perfil-comment-header-pro">
+                    <strong>{comentario.autor || comentario.nome || "Usuário"}</strong>
+
+                    {meuComentario && (
+                        <div className="perfil-comment-actions-pro">
+                            <button type="button" onClick={() => iniciarEdicaoComentario(comentario)}>
+                                Editar
+                            </button>
+                            <button type="button" onClick={() => excluirComentario(idPost, comentario.id)}>
+                                Excluir
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {emEdicao ? (
+                    <div className="perfil-comment-edit-pro">
+                        <textarea
+                            value={textoComentarioEditado}
+                            onChange={(e) => setTextoComentarioEditado(e.target.value)}
+                            autoFocus
+                        />
+
+                        <div>
+                            <button type="button" onClick={() => salvarComentario(idPost, comentario.id)}>
+                                Salvar
+                            </button>
+                            <button type="button" onClick={cancelarEdicaoComentario}>
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <p>{comentario.conteudo || comentario.texto}</p>
+                )}
+
+                {mostrarData && !emEdicao && (
+                    <span>
+                        {comentario.criado_em
+                            ? new Date(comentario.criado_em).toLocaleString("pt-BR")
+                            : comentario.criadoEm || "Agora mesmo"}
+                    </span>
+                )}
+            </div>
+        );
     }
 
     async function compartilhar(post) {
@@ -190,12 +477,29 @@ export default function Perfil() {
             navigator.share({ title: "PostFan", text: textoCompartilhar });
         } else {
             navigator.clipboard.writeText(textoCompartilhar);
-            alert("Texto do post copiado para compartilhar.");
+            dialog.notify({
+                type: "success",
+                title: "Link pronto para compartilhar",
+                message: "O conteúdo da publicação foi copiado para a área de transferência.",
+            });
         }
     }
 
+    function abrirPost(post) {
+        setPostAberto(post);
+        setComentarioAberto(post.id);
+        carregarComentarios(post.id);
+    }
+
     async function denunciarPost(post) {
-        const motivo = window.prompt("Conte rapidamente o motivo da denúncia:");
+        const motivo = await dialog.prompt({
+            type: "danger",
+            title: "Denunciar publicação",
+            message:
+                "Descreva o motivo da denúncia. Sua análise ajuda a manter o PostFan mais seguro para todos.",
+            placeholder: "Exemplo: conteúdo ofensivo, ameaça, spam ou informação falsa...",
+            confirmText: "Enviar denúncia",
+        });
         if (!motivo) return;
         if (!validarTexto(motivo, "Informe o motivo da denúncia.")) return;
 
@@ -206,28 +510,18 @@ export default function Perfil() {
                 motivo: motivo.trim(),
             });
 
-            alert("Denúncia enviada para análise.");
+            dialog.notify({
+                type: "success",
+                title: "Denúncia enviada",
+                message: "Obrigado pelo cuidado. Nossa equipe vai analisar essa publicação.",
+            });
         } catch (error) {
             console.error("Erro ao denunciar post:", error);
-            alert(error.response?.data?.erro || "Erro ao enviar denúncia.");
-        }
-    }
-
-    async function denunciarPerfil() {
-        const motivo = window.prompt("Conte rapidamente o motivo da denúncia:");
-        if (!motivo) return;
-        if (!validarTexto(motivo, "Informe o motivo da denúncia.")) return;
-
-        try {
-            await api.post("/denuncias", {
-                usuario_id: perfilId,
-                motivo: motivo.trim(),
+            dialog.notify({
+                type: "danger",
+                title: "Denúncia não enviada",
+                message: error.response?.data?.erro || "Erro ao enviar denúncia.",
             });
-
-            alert("Denúncia enviada para análise.");
-        } catch (error) {
-            console.error("Erro ao denunciar perfil:", error);
-            alert(error.response?.data?.erro || "Erro ao enviar denúncia.");
         }
     }
 
@@ -237,19 +531,39 @@ export default function Perfil() {
         try {
             setEnviandoMensagem(true);
 
-            await api.post("/mensagens", {
+            const res = await api.post("/mensagens", {
                 destinatario_id: perfilId,
                 mensagem: mensagemTexto.trim(),
             });
 
+            const mensagemCriada = res.data.dados;
+
+            if (mensagemCriada) {
+                setMensagensChat((prev) => [...prev, mensagemCriada]);
+            }
+
             setMensagemTexto("");
-            setMensagemAberta(false);
-            alert("Mensagem enviada com sucesso!");
+            carregarMensagens();
         } catch (error) {
             console.error("Erro ao enviar mensagem:", error);
-            alert(error.response?.data?.erro || "Erro ao enviar mensagem.");
+            dialog.notify({
+                type: "danger",
+                title: "Mensagem não enviada",
+                message: error.response?.data?.erro || "Erro ao enviar mensagem.",
+            });
         } finally {
             setEnviandoMensagem(false);
+        }
+    }
+
+    async function carregarMensagens() {
+        if (meuPerfil) return;
+
+        try {
+            const res = await api.get(`/mensagens/${perfilId}`);
+            setMensagensChat(Array.isArray(res.data) ? res.data : []);
+        } catch (error) {
+            console.error("Erro ao carregar mensagens:", error);
         }
     }
 
@@ -261,6 +575,15 @@ export default function Perfil() {
 
         carregarPerfil();
     }, [perfilId, token]);
+
+    useEffect(() => {
+        if (!mensagemAberta || meuPerfil) return undefined;
+
+        carregarMensagens();
+        const intervalo = window.setInterval(carregarMensagens, 3000);
+
+        return () => window.clearInterval(intervalo);
+    }, [mensagemAberta, perfilId, meuPerfil]);
 
     if (loading) {
         return (
@@ -335,9 +658,6 @@ export default function Perfil() {
                                             {stats.seguindo ? "Seguindo" : "Seguir"}
                                         </button>
 
-                                        <button onClick={denunciarPerfil} className="btn-denunciar-pro">
-                                            <FiAlertTriangle aria-hidden="true" /> Denunciar
-                                        </button>
                                     </>
                                 )}
                             </div>
@@ -419,6 +739,13 @@ export default function Perfil() {
                         </button>
 
                         <button
+                            className={abaAtiva === "videos" ? "active" : ""}
+                            onClick={() => setAbaAtiva("videos")}
+                        >
+                            Vídeos
+                        </button>
+
+                        <button
                             className={abaAtiva === "sobre" ? "active" : ""}
                             onClick={() => setAbaAtiva("sobre")}
                         >
@@ -442,16 +769,12 @@ export default function Perfil() {
                                         const comentarios = comentariosPost[post.id] || [];
 
                                         return (
-                                            <article className="perfil-post-card-pro" key={post.id}>
-                                                {post.imagem && (
-                                                    <img
-                                                        src={post.imagem}
-                                                        alt="Post"
-                                                        onError={(e) => {
-                                                            e.currentTarget.style.display = "none";
-                                                        }}
-                                                    />
-                                                )}
+                                            <article
+                                                className="perfil-post-card-pro"
+                                                key={post.id}
+                                                onClick={() => abrirPost(post)}
+                                            >
+                                                {renderPostMedia(post)}
 
                                                 <div className="perfil-post-content-pro">
                                                     {post.tema && <span>#{post.tema}</span>}
@@ -462,25 +785,31 @@ export default function Perfil() {
                                                 <div className="perfil-post-actions-pro">
                                                     <button
                                                         className={post.curtiu ? "liked" : ""}
-                                                        onClick={() => curtirPost(post.id)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            curtirPost(post.id);
+                                                        }}
                                                     >
                                                         <FiHeart aria-hidden="true" /> {post.total_curtidas || 0}
                                                     </button>
 
-                                                    <button onClick={() => abrirComentarios(post.id)}>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            abrirPost(post);
+                                                        }}
+                                                    >
                                                         <FiMessageCircle aria-hidden="true" />{" "}
                                                         {post.total_comentarios || 0}
                                                     </button>
 
-                                                    <button onClick={() => compartilhar(post)}>
-                                                        <FiShare2 aria-hidden="true" /> Compartilhar
-                                                    </button>
-
                                                     <button
-                                                        className="report"
-                                                        onClick={() => denunciarPost(post)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            compartilhar(post);
+                                                        }}
                                                     >
-                                                        <FiAlertTriangle aria-hidden="true" /> Denunciar
+                                                        <FiShare2 aria-hidden="true" /> Compartilhar
                                                     </button>
                                                 </div>
 
@@ -490,21 +819,7 @@ export default function Perfil() {
                                                             <p className="no-comments">Nenhum comentário ainda.</p>
                                                         ) : (
                                                             comentarios.map((comentario) => (
-                                                                <div className="comment-item" key={comentario.id}>
-                                                                    <strong>
-                                                                        {comentario.autor ||
-                                                                            comentario.nome ||
-                                                                            "Usuário"}
-                                                                    </strong>
-                                                                    <p>{comentario.conteudo || comentario.texto}</p>
-                                                                    <span>
-                                                                        {comentario.criado_em
-                                                                            ? new Date(
-                                                                                comentario.criado_em,
-                                                                            ).toLocaleString("pt-BR")
-                                                                            : comentario.criadoEm || "Agora mesmo"}
-                                                                    </span>
-                                                                </div>
+                                                                renderComentario(comentario, post.id)
                                                             ))
                                                         )}
 
@@ -534,19 +849,41 @@ export default function Perfil() {
                         </>
                     )}
 
-                    {abaAtiva === "fotos" && (
-                        <div className="perfil-empty-pro">
-                            <span>🖼️</span>
-                            <h3>Fotos do perfil</h3>
-                            <p>Em breve as fotos publicadas aparecerão aqui.</p>
-                        </div>
-                    )}
+                    {abaAtiva === "fotos" && renderMediaGrid(fotosDoPerfil, "fotos")}
+
+                    {abaAtiva === "videos" && renderMediaGrid(videosDoPerfil, "videos")}
 
                     {abaAtiva === "sobre" && (
-                        <div className="perfil-empty-pro">
-                            <span>ℹ️</span>
-                            <h3>Sobre o usuário</h3>
-                            <p>{perfil.bio || "Este usuário ainda não adicionou informações."}</p>
+                        <div className="perfil-about-pro">
+                            <div>
+                                <h3>Sobre {perfil.nome}</h3>
+                                <p>{perfil.bio || "Este usuário ainda não adicionou uma bio."}</p>
+                            </div>
+
+                            <div className="perfil-about-grid-pro">
+                                <section>
+                                    <strong>O que me representa</strong>
+                                    <p>
+                                        {perfil.essencia_representa ||
+                                            "Ainda não informou o que representa seu perfil."}
+                                    </p>
+                                </section>
+
+                                <section>
+                                    <strong>Tema favorito</strong>
+                                    <p>{perfil.essencia_tema || "Nenhum tema favorito informado."}</p>
+                                </section>
+
+                                <section>
+                                    <strong>Minha frase</strong>
+                                    <p>{perfil.essencia_frase || "Nenhuma frase adicionada ainda."}</p>
+                                </section>
+
+                                <section>
+                                    <strong>Aberto para</strong>
+                                    <p>{perfil.aberto_para || "Ainda não informado."}</p>
+                                </section>
+                            </div>
                         </div>
                     )}
                 </section>
@@ -563,20 +900,144 @@ export default function Perfil() {
                             <FiX aria-hidden="true" />
                         </button>
 
-                        <h2>Enviar mensagem</h2>
-                        <p>Mensagem para {perfil.nome}</p>
+                        <h2>Mensagem</h2>
+                        <p>Conversa com {perfil.nome}</p>
 
-                        <textarea
-                            value={mensagemTexto}
-                            onChange={(e) => setMensagemTexto(e.target.value)}
-                            placeholder="Digite sua mensagem..."
-                        />
+                        <div className="perfil-chat-list">
+                            {mensagensChat.length === 0 ? (
+                                <div className="perfil-chat-empty">
+                                    Nenhuma mensagem ainda. Comece a conversa.
+                                </div>
+                            ) : (
+                                mensagensChat.map((mensagem) => {
+                                    const minhaMensagem =
+                                        Number(mensagem.remetente_id) === Number(usuarioLogado?.id);
 
-                        <button onClick={enviarMensagem} disabled={enviandoMensagem}>
-                            <FiSend aria-hidden="true" />
-                            {enviandoMensagem ? "Enviando..." : "Enviar mensagem"}
-                        </button>
+                                    return (
+                                        <div
+                                            className={
+                                                minhaMensagem
+                                                    ? "perfil-chat-message mine"
+                                                    : "perfil-chat-message"
+                                            }
+                                            key={mensagem.id}
+                                        >
+                                            <p>{mensagem.mensagem}</p>
+                                            <span>
+                                                {mensagem.criado_em
+                                                    ? new Date(mensagem.criado_em).toLocaleTimeString("pt-BR", {
+                                                        hour: "2-digit",
+                                                        minute: "2-digit",
+                                                    })
+                                                    : "Agora"}
+                                            </span>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        <div className="perfil-chat-form">
+                            <input
+                                value={mensagemTexto}
+                                onChange={(e) => setMensagemTexto(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        enviarMensagem();
+                                    }
+                                }}
+                                placeholder="Digite sua mensagem..."
+                            />
+
+                            <button onClick={enviarMensagem} disabled={enviandoMensagem}>
+                                <FiSend aria-hidden="true" />
+                                {enviandoMensagem ? "..." : "Enviar"}
+                            </button>
+                        </div>
                     </div>
+                </div>
+            )}
+
+            {postAberto && (
+                <div className="perfil-post-modal-overlay" role="dialog" aria-modal="true">
+                    <article className="perfil-post-modal">
+                        <button
+                            className="perfil-message-close"
+                            onClick={() => setPostAberto(null)}
+                            aria-label="Fechar"
+                        >
+                            <FiX aria-hidden="true" />
+                        </button>
+
+                        <h2>Publicação de {perfil.nome}</h2>
+
+                        {renderPostMedia(postAberto, "perfil-post-modal-media")}
+
+                        {postAberto.tema && <span className="perfil-post-modal-theme">#{postAberto.tema}</span>}
+                        <p className="perfil-post-modal-text">{postAberto.conteudo}</p>
+
+                        <div className="perfil-post-actions-pro modal-actions-inline">
+                            <button
+                                className={postAberto.curtiu ? "liked" : ""}
+                                onClick={() => {
+                                    curtirPost(postAberto.id);
+                                    setPostAberto((prev) =>
+                                        prev
+                                            ? {
+                                                ...prev,
+                                                curtiu: !prev.curtiu,
+                                                total_curtidas: prev.curtiu
+                                                    ? Math.max(Number(prev.total_curtidas || 0) - 1, 0)
+                                                    : Number(prev.total_curtidas || 0) + 1,
+                                            }
+                                            : prev,
+                                    );
+                                }}
+                            >
+                                <FiHeart aria-hidden="true" /> {postAberto.total_curtidas || 0}
+                            </button>
+
+                            <button onClick={() => abrirComentarios(postAberto.id)}>
+                                <FiMessageCircle aria-hidden="true" /> {postAberto.total_comentarios || 0}
+                            </button>
+
+                            <button onClick={() => compartilhar(postAberto)}>
+                                <FiShare2 aria-hidden="true" /> Compartilhar
+                            </button>
+
+                            <button className="report" onClick={() => denunciarPost(postAberto)}>
+                                <FiAlertTriangle aria-hidden="true" /> Denunciar
+                            </button>
+                        </div>
+
+                        <div className="perfil-comments-pro">
+                            {(comentariosPost[postAberto.id] || []).length === 0 ? (
+                                <p className="no-comments">Nenhum comentário ainda.</p>
+                            ) : (
+                                (comentariosPost[postAberto.id] || []).map((comentario) => (
+                                    renderComentario(comentario, postAberto.id, false)
+                                ))
+                            )}
+
+                            <div className="comment-form">
+                                <input
+                                    type="text"
+                                    placeholder="Escreva um comentário..."
+                                    value={novoComentario[postAberto.id] || ""}
+                                    onChange={(e) =>
+                                        setNovoComentario({
+                                            ...novoComentario,
+                                            [postAberto.id]: e.target.value,
+                                        })
+                                    }
+                                />
+                                <button onClick={() => comentar(postAberto.id)}>
+                                    <FiSend aria-hidden="true" /> Enviar
+                                </button>
+                            </div>
+                        </div>
+                    </article>
                 </div>
             )}
         </main>

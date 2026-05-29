@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { analisarConteudo } from "../utils/moderacao";
+import { useNotification } from "../context/notificationStore";
 import "../styles/style.css";
 
 export default function GrupoChat() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const dialog = useNotification();
 
     const usuario = JSON.parse(localStorage.getItem("usuario") || "{}");
 
@@ -22,10 +24,11 @@ export default function GrupoChat() {
             const res = await api.get(`/api/grupos/${id}`);
             setGrupo(res.data);
         } catch (error) {
-            alert(
-                error.response?.data?.erro ||
-                "Erro ao acessar grupo."
-            );
+            dialog.notify({
+                type: "danger",
+                title: "Grupo indisponível",
+                message: error.response?.data?.erro || "Erro ao acessar grupo.",
+            });
 
             navigate("/sala-virtual");
         }
@@ -58,7 +61,11 @@ export default function GrupoChat() {
         const moderacao = analisarConteudo(mensagem);
 
         if (!moderacao.aprovado) {
-            alert(moderacao.motivo);
+            dialog.notify({
+                type: "warning",
+                title: "Mensagem em revisão",
+                message: moderacao.motivo,
+            });
             return;
         }
 
@@ -72,10 +79,11 @@ export default function GrupoChat() {
             await carregarMensagens();
 
         } catch (error) {
-            alert(
-                error.response?.data?.erro ||
-                "Erro ao enviar mensagem."
-            );
+            dialog.notify({
+                type: "danger",
+                title: "Mensagem não enviada",
+                message: error.response?.data?.erro || "Erro ao enviar mensagem.",
+            });
         }
     }
 
@@ -83,7 +91,11 @@ export default function GrupoChat() {
         if (!grupo?.codigo_convite) return;
 
         navigator.clipboard.writeText(grupo.codigo_convite);
-        alert("Código copiado!");
+        dialog.notify({
+            type: "success",
+            title: "Código copiado",
+            message: "O código de convite foi copiado para a área de transferência.",
+        });
     }
 
     useEffect(() => {
@@ -133,7 +145,7 @@ export default function GrupoChat() {
                         </span>
                     </div>
 
-                    {grupo?.papel === "admin" && (
+                    {grupo?.papel === "admin" && grupo?.tipo === "reservada" && (
                         <div className="chat-convite">
                             <small>Código para convidar</small>
 

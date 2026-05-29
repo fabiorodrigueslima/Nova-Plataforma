@@ -20,7 +20,7 @@ export default function Seguranca() {
                             P
                         </div>
 
-                        <h1>POSTFAN</h1>
+                        <h1>PostFan</h1>
 
                     </div>
 

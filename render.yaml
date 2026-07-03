@@ -16,9 +16,9 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: GOOGLE_CLIENT_ID
-        sync: false
+        value: 1014036348694-5l3nn8l04q8legmtar6c0pbde44sse39.apps.googleusercontent.com
       - key: VITE_GOOGLE_CLIENT_ID
-        sync: false
+        value: 1014036348694-5l3nn8l04q8legmtar6c0pbde44sse39.apps.googleusercontent.com
       - key: EMAIL_HOST
         value: smtp.gmail.com
       - key: EMAIL_PORT

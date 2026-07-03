@@ -26,12 +26,14 @@ Este projeto foi preparado para subir no Render como um unico Web Service Node:
 
 ## 3. Variaveis que voce precisa preencher
 
-Obrigatorias:
+O Blueprint ja define o Google Client ID usado no desenvolvimento:
 
 ```env
 GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
 VITE_GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
 ```
+
+Se voce trocar o OAuth Client no Google Cloud, atualize esses dois valores no painel do Render ou no `render.yaml`.
 
 Para recuperacao de senha por email, adicione depois no painel do Render:
 

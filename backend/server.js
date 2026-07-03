@@ -544,9 +544,9 @@ function autenticar(req, res, next) {
   }
 }
 
-/* ================= TESTE ================= */
+/* ================= STATUS ================= */
 
-app.get("/", (req, res) => {
+app.get("/api/status", (req, res) => {
   res.json({
     mensagem: "Servidor Postfan rodando!",
     status: "online",

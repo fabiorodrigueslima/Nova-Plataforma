@@ -16,12 +16,16 @@ require("dotenv").config({ quiet: true });
 
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
 const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const fs = require("fs");
+const { OAuth2Client } = require("google-auth-library");
+const cloudinary = require("cloudinary").v2;
 const pool = require("./db");
 const { bloquearSeNecessario } = require("./moderacao");
 
@@ -41,6 +45,32 @@ const FRONTEND_URL =
 
 const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
 const frontendDistDir = path.resolve(__dirname, "../dist");
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim();
+const GOOGLE_CLIENT_ID_VALIDO = /^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(
+  GOOGLE_CLIENT_ID || "",
+);
+const googleClient = GOOGLE_CLIENT_ID_VALIDO
+  ? new OAuth2Client(GOOGLE_CLIENT_ID)
+  : null;
+const usaCloudinary = Boolean(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET,
+);
+
+if (usaCloudinary) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+}
+
+if (GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID_VALIDO) {
+  console.warn(
+    "GOOGLE_CLIENT_ID invalido. Use o Client ID que termina com .apps.googleusercontent.com, nao o Client Secret.",
+  );
+}
 
 const allowedOrigins = [
   "http://localhost:5173",
@@ -80,6 +110,21 @@ app.use(
   }),
 );
 
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  }),
+);
+
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
+
 app.options(
   /.*/,
   cors({
@@ -111,13 +156,15 @@ const allowedUploadTypes = new Map([
   ],
 ]);
 
-if (!fs.existsSync(uploadsDir)) {
+if (!usaCloudinary && !fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-app.use("/uploads", express.static(uploadsDir));
+if (!usaCloudinary) {
+  app.use("/uploads", express.static(uploadsDir));
+}
 
-const storage = multer.diskStorage({
+const diskStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
   },
@@ -132,7 +179,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage,
+  storage: usaCloudinary ? multer.memoryStorage() : diskStorage,
   limits: {
     fileSize: MAX_UPLOAD_SIZE,
     files: 1,
@@ -148,6 +195,43 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+function uploadCloudinary(file, folder) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        resource_type: "auto",
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        return resolve(result);
+      },
+    );
+
+    stream.end(file.buffer);
+  });
+}
+
+async function salvarArquivoEnviado(file, folder = "postfan/uploads") {
+  if (!file) return null;
+
+  if (usaCloudinary) {
+    const result = await uploadCloudinary(file, folder);
+
+    return {
+      url: result.secure_url,
+      tipo: file.mimetype,
+      nome: file.originalname,
+    };
+  }
+
+  return {
+    url: `${BACKEND_URL}/uploads/${file.filename}`,
+    tipo: file.mimetype,
+    nome: file.originalname,
+  };
+}
 
 /* ================= BANCO ================= */
 
@@ -171,7 +255,9 @@ async function criarTabelas() {
         id SERIAL PRIMARY KEY,
         nome VARCHAR(150) NOT NULL,
         email VARCHAR(150) UNIQUE NOT NULL,
-        senha TEXT NOT NULL,
+        senha TEXT,
+        google_id TEXT UNIQUE,
+        provider VARCHAR(30) DEFAULT 'local',
         foto TEXT,
         bio TEXT,
         essencia_representa TEXT,
@@ -307,6 +393,9 @@ async function criarTabelas() {
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_acesso TIMESTAMP;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_recuperacao TEXT;
       ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_expira TIMESTAMP;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
+      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS provider VARCHAR(30) DEFAULT 'local';
+      ALTER TABLE usuarios ALTER COLUMN senha DROP NOT NULL;
 
       ALTER TABLE posts ADD COLUMN IF NOT EXISTS conteudo TEXT;
       ALTER TABLE posts ADD COLUMN IF NOT EXISTS tema VARCHAR(100);
@@ -336,6 +425,15 @@ async function criarTabelas() {
       ALTER TABLE grupos ADD COLUMN IF NOT EXISTS acesso_pago BOOLEAN DEFAULT false;
 
       UPDATE grupos SET tipo = 'publico' WHERE tipo IS NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_posts_usuario_id ON posts(usuario_id);
+      CREATE INDEX IF NOT EXISTS idx_posts_criado_em ON posts(criado_em DESC);
+      CREATE INDEX IF NOT EXISTS idx_comentarios_post_id ON comentarios(post_id);
+      CREATE INDEX IF NOT EXISTS idx_seguidores_seguidor_id ON seguidores(seguidor_id);
+      CREATE INDEX IF NOT EXISTS idx_seguidores_seguindo_id ON seguidores(seguindo_id);
+      CREATE INDEX IF NOT EXISTS idx_mensagens_privadas_destinatario_id ON mensagens_privadas(destinatario_id);
+      CREATE INDEX IF NOT EXISTS idx_grupo_membros_usuario_id ON grupo_membros(usuario_id);
+      CREATE INDEX IF NOT EXISTS idx_grupo_mensagens_grupo_id ON grupo_mensagens(grupo_id);
     `);
 
     console.log("✅ Tabelas verificadas/atualizadas com sucesso!");
@@ -360,6 +458,33 @@ function obterFrontendUrl(req) {
   }
 
   return FRONTEND_URL;
+}
+
+function montarUsuarioPublico(usuario) {
+  return {
+    id: usuario.id,
+    nome: usuario.nome,
+    email: usuario.email,
+    foto: usuario.foto,
+    bio: usuario.bio,
+    essencia_representa: usuario.essencia_representa,
+    essencia_tema: usuario.essencia_tema,
+    essencia_frase: usuario.essencia_frase,
+    aberto_para: usuario.aberto_para,
+    provider: usuario.provider || "local",
+  };
+}
+
+function gerarTokenUsuario(usuario) {
+  return jwt.sign(
+    {
+      id: usuario.id,
+      nome: usuario.nome,
+      email: usuario.email,
+    },
+    JWT_SECRET,
+    { expiresIn: "7d" },
+  );
 }
 
 function autenticar(req, res, next) {
@@ -432,7 +557,8 @@ app.post("/cadastro", upload.single("foto"), async (req, res) => {
     let fotoUrl = null;
 
     if (req.file) {
-      fotoUrl = `${BACKEND_URL}/uploads/${req.file.filename}`;
+      const arquivo = await salvarArquivoEnviado(req.file, "postfan/perfis");
+      fotoUrl = arquivo.url;
     }
 
     const senhaHash = await bcrypt.hash(senha, 10);
@@ -460,22 +586,12 @@ app.post("/cadastro", upload.single("foto"), async (req, res) => {
 
     const usuario = novo.rows[0];
 
-    const token = jwt.sign(
-      {
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-      },
-      JWT_SECRET,
-      {
-        expiresIn: "7d",
-      },
-    );
+    const token = gerarTokenUsuario(usuario);
 
     res.status(201).json({
       mensagem: "Cadastro realizado com sucesso!",
       token,
-      usuario,
+      usuario: montarUsuarioPublico(usuario),
     });
   } catch (error) {
     console.error("❌ Erro no cadastro:", error.message);
@@ -510,6 +626,13 @@ app.post("/login", async (req, res) => {
 
     const usuario = resultado.rows[0];
 
+    if (!usuario.senha) {
+      return res.status(400).json({
+        autenticado: false,
+        erro: "Esta conta foi criada com Google. Use o botão Entrar com Google.",
+      });
+    }
+
     const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
 
     if (!senhaCorreta) {
@@ -519,35 +642,111 @@ app.post("/login", async (req, res) => {
       });
     }
 
-    const token = jwt.sign(
-      {
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-      },
-      JWT_SECRET,
-      { expiresIn: "7d" },
-    );
+    const token = gerarTokenUsuario(usuario);
 
     res.json({
       autenticado: true,
       mensagem: "Login realizado com sucesso!",
       token,
-      usuario: {
-        id: usuario.id,
-        nome: usuario.nome,
-        email: usuario.email,
-        foto: usuario.foto,
-        bio: usuario.bio,
-        essencia_representa: usuario.essencia_representa,
-        essencia_tema: usuario.essencia_tema,
-        essencia_frase: usuario.essencia_frase,
-        aberto_para: usuario.aberto_para,
-      },
+      usuario: montarUsuarioPublico(usuario),
     });
   } catch (error) {
     console.error("❌ Erro no login:", error.message);
     res.status(500).json({ erro: "Erro interno no servidor." });
+  }
+});
+
+/* ================= LOGIN COM GOOGLE ================= */
+
+app.post("/auth/google", async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    if (!GOOGLE_CLIENT_ID) {
+      return res.status(503).json({
+        erro: "Login com Google não configurado no servidor.",
+      });
+    }
+
+    if (!googleClient || !GOOGLE_CLIENT_ID_VALIDO) {
+      return res.status(503).json({
+        erro:
+          "Google Client ID inválido. Use o ID que termina com .apps.googleusercontent.com.",
+      });
+    }
+
+    if (!credential) {
+      return res.status(400).json({ erro: "Credencial do Google não enviada." });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+
+    if (!payload?.email || !payload?.sub) {
+      return res.status(400).json({ erro: "Conta Google inválida." });
+    }
+
+    const email = payload.email.toLowerCase();
+    const nome = payload.name || email.split("@")[0];
+    const foto = payload.picture || null;
+
+    const existente = await pool.query("SELECT * FROM usuarios WHERE email = $1", [
+      email,
+    ]);
+
+    let usuario;
+
+    if (existente.rows.length > 0) {
+      const atual = existente.rows[0];
+
+      const atualizado = await pool.query(
+        `
+        UPDATE usuarios
+        SET google_id = COALESCE(google_id, $1),
+            provider = CASE WHEN senha IS NULL THEN 'google' ELSE provider END,
+            foto = COALESCE(foto, $2)
+        WHERE id = $3
+        RETURNING *
+        `,
+        [payload.sub, foto, atual.id],
+      );
+
+      usuario = atualizado.rows[0];
+    } else {
+      const novo = await pool.query(
+        `
+        INSERT INTO usuarios (
+          nome,
+          email,
+          senha,
+          foto,
+          google_id,
+          provider
+        )
+        VALUES ($1, $2, NULL, $3, $4, 'google')
+        RETURNING *
+        `,
+        [nome, email, foto, payload.sub],
+      );
+
+      usuario = novo.rows[0];
+    }
+
+    const token = gerarTokenUsuario(usuario);
+
+    res.json({
+      autenticado: true,
+      mensagem: "Login com Google realizado com sucesso!",
+      token,
+      usuario: montarUsuarioPublico(usuario),
+    });
+  } catch (error) {
+    console.error("Erro no login com Google:", error.message);
+    res.status(401).json({ erro: "Não foi possível validar sua conta Google." });
   }
 });
 
@@ -809,7 +1008,8 @@ app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
     let fotoUrl = null;
 
     if (req.file) {
-      fotoUrl = `${BACKEND_URL}/uploads/${req.file.filename}`;
+      const arquivo = await salvarArquivoEnviado(req.file, "postfan/perfis");
+      fotoUrl = arquivo.url;
     }
 
     const atual = await pool.query("SELECT * FROM usuarios WHERE id = $1", [
@@ -865,14 +1065,14 @@ app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
 
 /* ================= UPLOAD AVULSO ================= */
 
-app.post("/upload", autenticar, upload.single("imagem"), (req, res) => {
+app.post("/upload", autenticar, upload.single("imagem"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ erro: "Nenhuma imagem enviada." });
   }
 
-  res.json({
-    url: `${BACKEND_URL}/uploads/${req.file.filename}`,
-  });
+  const arquivo = await salvarArquivoEnviado(req.file, "postfan/uploads");
+
+  res.json({ url: arquivo.url });
 });
 
 /* ================= LISTAR POSTS ================= */
@@ -918,9 +1118,10 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
     let nomeArquivo = null;
 
     if (req.file) {
-      imagem = `${BACKEND_URL}/uploads/${req.file.filename}`;
-      tipoArquivo = req.file.mimetype;
-      nomeArquivo = req.file.originalname;
+      const arquivo = await salvarArquivoEnviado(req.file, "postfan/posts");
+      imagem = arquivo.url;
+      tipoArquivo = arquivo.tipo;
+      nomeArquivo = arquivo.nome;
     }
 
     if (!conteudo && !imagem) {

@@ -41,9 +41,12 @@ if (!JWT_SECRET) {
 }
 
 const FRONTEND_URL =
-  process.env.FRONTEND_URL || "https://postfan-novo.netlify.app";
+  process.env.FRONTEND_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  "http://localhost:5173";
 
-const BACKEND_URL = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+const BACKEND_URL =
+  process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 const frontendDistDir = path.resolve(__dirname, "../dist");
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim();
 const GOOGLE_CLIENT_ID_VALIDO = /^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(
@@ -87,6 +90,10 @@ const allowedOrigins = [
 
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
+if (process.env.RENDER_EXTERNAL_URL) {
+  allowedOrigins.push(process.env.RENDER_EXTERNAL_URL);
 }
 
 function validarOrigem(origin, callback) {
@@ -135,6 +142,10 @@ app.options(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.get("/healthz", (req, res) => {
+  res.json({ status: "ok" });
+});
 
 /* ================= UPLOADS ================= */
 
@@ -452,9 +463,26 @@ function gerarCodigoGrupo() {
 
 function obterFrontendUrl(req) {
   const origin = req.get("origin");
+  const host = req.get("host");
+  const forwardedProto = req.get("x-forwarded-proto");
 
   if (origin && allowedOrigins.includes(origin)) {
     return origin;
+  }
+
+  if (origin && host) {
+    try {
+      if (new URL(origin).host === host) {
+        return origin;
+      }
+    } catch {
+      // Se origin vier malformado, usa o fallback abaixo.
+    }
+  }
+
+  if (host) {
+    const protocol = forwardedProto || req.protocol || "https";
+    return `${protocol}://${host}`;
   }
 
   return FRONTEND_URL;

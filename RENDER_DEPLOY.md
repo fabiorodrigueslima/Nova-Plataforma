@@ -31,6 +31,11 @@ Obrigatorias:
 ```env
 GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
 VITE_GOOGLE_CLIENT_ID=seu-client-id.apps.googleusercontent.com
+```
+
+Para recuperacao de senha por email, adicione depois no painel do Render:
+
+```env
 EMAIL_USER=seu-email@gmail.com
 EMAIL_PASS=sua-senha-de-app-google
 ```

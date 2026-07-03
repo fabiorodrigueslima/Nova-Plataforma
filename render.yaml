@@ -25,10 +25,6 @@ services:
         value: 587
       - key: EMAIL_SECURE
         value: false
-      - key: EMAIL_USER
-        sync: false
-      - key: EMAIL_PASS
-        sync: false
 
 databases:
   - name: postfan-db

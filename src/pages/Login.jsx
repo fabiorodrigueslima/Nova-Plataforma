@@ -1,13 +1,18 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaEye, FaEyeSlash, FaGoogle } from "react-icons/fa";
+import { GoogleLogin } from "@react-oauth/google";
 
-import api from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { loginComEmail, loginComGoogle } from "../services/auth";
+import { getGoogleClientIdStatus } from "../utils/googleOAuth";
 import imagem3 from "../assets/img/imagem3.png";
 import "../styles/style.css";
 
 export default function Login() {
     const navigate = useNavigate();
+    const { salvarSessao } = useAuth();
+    const googleClientIdStatus = getGoogleClientIdStatus();
 
     const [form, setForm] = useState({
         email: "",
@@ -36,22 +41,14 @@ export default function Login() {
         try {
             setLoading(true);
 
-            const res = await api.post("/login", form);
-            const data = res.data;
+            const data = await loginComEmail(form);
 
             if (!data.autenticado && !data.token) {
                 setErro(data.erro || "Email ou senha inválidos.");
                 return;
             }
 
-            if (data.token) {
-                localStorage.setItem("token", data.token);
-            }
-
-            if (data.usuario) {
-                localStorage.setItem("usuario", JSON.stringify(data.usuario));
-            }
-
+            salvarSessao(data.token, data.usuario);
             navigate("/feed");
         } catch (error) {
             if (!error.response || error.response.status >= 500) {
@@ -59,6 +56,21 @@ export default function Login() {
             }
 
             setErro(error.response?.data?.erro || "Email ou senha inválidos.");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function handleGoogleSuccess(credentialResponse) {
+        setErro("");
+
+        try {
+            setLoading(true);
+            const data = await loginComGoogle(credentialResponse.credential);
+            salvarSessao(data.token, data.usuario);
+            navigate("/feed");
+        } catch (error) {
+            setErro(error.response?.data?.erro || "Não foi possível entrar com Google.");
         } finally {
             setLoading(false);
         }
@@ -130,10 +142,22 @@ export default function Login() {
                         <span>ou</span>
                     </div>
 
-                    <button type="button" className="login-google">
-                        <FaGoogle />
-                        Fazer login com o Google
-                    </button>
+                    {googleClientIdStatus.configured ? (
+                        <div className="google-login-wrapper">
+                            <GoogleLogin
+                                onSuccess={handleGoogleSuccess}
+                                onError={() => setErro("Não foi possível entrar com Google.")}
+                                text="signin_with"
+                                shape="pill"
+                                width="320"
+                            />
+                        </div>
+                    ) : (
+                        <button type="button" className="login-google" disabled>
+                            <FaGoogle />
+                            {googleClientIdStatus.message}
+                        </button>
+                    )}
 
                     <p className="login-create">
                         Não tem conta?

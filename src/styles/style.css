@@ -361,6 +361,23 @@ body {
   margin-bottom: 24px;
 }
 
+.google-login-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 24px;
+}
+
+.google-login-wrapper > div {
+  width: 100%;
+}
+
+.google-btn:disabled,
+.login-google:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
 .divider {
   text-align: center;
   margin: 24px 0;

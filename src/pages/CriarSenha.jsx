@@ -24,7 +24,7 @@ export default function ResetarSenha() {
         setMensagem("");
 
         if (!token) {
-            setErro("Token inv�lido ou n�o encontrado. Solicite um novo link de recupera��o.");
+            setErro("Token inválido ou não encontrado. Solicite um novo link de recuperação.");
             return;
         }
 

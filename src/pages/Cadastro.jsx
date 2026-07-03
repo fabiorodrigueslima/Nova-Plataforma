@@ -1,12 +1,17 @@
 ﻿import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FaGoogle, FaImage, FaEye, FaEyeSlash } from "react-icons/fa";
+import { GoogleLogin } from "@react-oauth/google";
 import imagem3 from "../assets/img/imagem3.png";
 import "../styles/style.css";
-import api from "../services/api";
+import { useAuth } from "../context/AuthContext";
+import { cadastrarComEmail, loginComGoogle } from "../services/auth";
+import { getGoogleClientIdStatus } from "../utils/googleOAuth";
 
 export default function Cadastro() {
   const navigate = useNavigate();
+  const { salvarSessao } = useAuth();
+  const googleClientIdStatus = getGoogleClientIdStatus();
 
   const [form, setForm] = useState({
     nome: "",
@@ -76,17 +81,31 @@ export default function Cadastro() {
         formData.append("foto", fotoFile);
       }
 
-      const res = await api.post("/cadastro", formData);
-      const data = res.data;
-
-      if (data.token) {
-        localStorage.setItem("token", data.token);
-      }
-
-      localStorage.setItem("usuario", JSON.stringify(data.usuario));
+      const data = await cadastrarComEmail(formData);
+      salvarSessao(data.token, data.usuario);
       navigate("/feed");
     } catch (error) {
       setErro(error.response?.data?.erro || "Erro ao criar conta.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleGoogleSuccess(credentialResponse) {
+    setErro("");
+
+    if (!maiorIdade || !aceitouTermos) {
+      setErro("Confirme a maioridade e aceite os termos para continuar com Google.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const data = await loginComGoogle(credentialResponse.credential);
+      salvarSessao(data.token, data.usuario);
+      navigate("/feed");
+    } catch (error) {
+      setErro(error.response?.data?.erro || "Não foi possível cadastrar com Google.");
     } finally {
       setLoading(false);
     }
@@ -148,10 +167,22 @@ export default function Cadastro() {
             É grátis e leva menos de 1 minuto
           </p>
 
-          <button type="button" className="google-btn">
-            <FaGoogle />
-            Inscrever-se no Google
-          </button>
+          {googleClientIdStatus.configured ? (
+            <div className="google-login-wrapper">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setErro("Não foi possível cadastrar com Google.")}
+                text="signup_with"
+                shape="pill"
+                width="320"
+              />
+            </div>
+          ) : (
+            <button type="button" className="google-btn" disabled>
+              <FaGoogle />
+              {googleClientIdStatus.message}
+            </button>
+          )}
 
           <div className="divider">
             <span>ou preencha os dados abaixo</span>

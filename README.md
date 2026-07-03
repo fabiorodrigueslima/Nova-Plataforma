@@ -1,16 +1,54 @@
-# React + Vite
+# PostFan
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Plataforma social de debates feita com React, Vite, Node.js, Express e PostgreSQL.
 
-Currently, two official plugins are available:
+## Requisitos
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Node.js 20+
+- PostgreSQL
+- Conta Google Cloud para login com Google
+- Conta Cloudinary para uploads em producao
 
-## React Compiler
+## Configuracao
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. Copie `.env.example` para `.env.local` na raiz.
+2. Copie `backend/.env.example` para `backend/.env`.
+3. Preencha `DATABASE_URL`, `JWT_SECRET`, `FRONTEND_URL` e `BACKEND_URL`.
+4. Para login com Google, crie um OAuth Client ID no Google Cloud Console:
+   - Tipo: Web application
+   - JavaScript origins: `http://localhost:5173` e seu dominio de producao
+   - Authorized redirect URIs: nao e necessario para o fluxo usado pelo botao Google
+   - Use o mesmo Client ID em `VITE_GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_ID`
+   - O Client ID deve terminar com `.apps.googleusercontent.com`; valores que comecam com `GOCSPX-` sao Client Secret e nao funcionam no botao
+5. Para uploads persistentes em producao, preencha as variaveis `CLOUDINARY_*`.
 
-## Expanding the ESLint configuration
+## Rodar localmente
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Frontend:
+
+```bash
+npm install
+npm run dev
+```
+
+Backend:
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+## Scripts
+
+- `npm run dev`: inicia o frontend Vite
+- `npm run build`: gera build de producao
+- `npm run lint`: executa ESLint
+- `cd backend && npm run dev`: inicia o backend com Nodemon
+
+## Observacoes de producao
+
+- O backend usa Cloudinary quando `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` e `CLOUDINARY_API_SECRET` estao preenchidos.
+- Sem Cloudinary, uploads ficam em `backend/uploads`, indicado apenas para desenvolvimento local.
+- O login Google depende de `GOOGLE_CLIENT_ID` no backend e `VITE_GOOGLE_CLIENT_ID` no frontend.
+- Nunca publique arquivos `.env` reais no Git.

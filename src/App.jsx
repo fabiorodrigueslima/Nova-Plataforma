@@ -18,6 +18,7 @@ import GrupoChat from "./pages/GrupoChat";
 import Sugestoes from "./pages/Sugestoes";
 import Explorar from "./pages/Explorar";
 import Configuracoes from "./pages/Configuracoes";
+import Mensagens from "./pages/Mensagens";
 import PrivateRoutes from "./routes/PrivateRoutes";
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/perfil/:id" element={<Perfil />} />
         <Route path="/editar-perfil" element={<EditarPerfil />} />
         <Route path="/configuracoes" element={<Configuracoes />} />
+        <Route path="/mensagens" element={<Mensagens />} />
         <Route path="/sala-virtual" element={<SalaVirtual />} />
         <Route path="/grupo/:id" element={<GrupoChat />} />
         <Route path="/sugestoes" element={<Sugestoes />} />

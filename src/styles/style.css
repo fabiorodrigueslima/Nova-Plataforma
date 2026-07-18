@@ -6964,6 +6964,292 @@ body {
   }
 }
 
+/* ================= MENSAGENS DIRETAS ================= */
+
+.direct-page {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  background: var(--color-bg);
+}
+
+.direct-layout {
+  position: relative;
+  z-index: 2;
+  width: min(1100px, 100%);
+  height: min(780px, calc(100vh - 48px));
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.direct-inbox {
+  display: block;
+  min-width: 0;
+  border-right: 1px solid var(--color-border);
+  background: #0a0f1d;
+}
+
+.direct-inbox > header,
+.direct-chat > header {
+  height: 76px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.direct-inbox header button,
+.direct-mobile-back {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: #172033;
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+.direct-inbox header span,
+.direct-chat header small {
+  display: block;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.direct-inbox h1 {
+  margin: 2px 0 0;
+  font-size: 1.25rem;
+}
+
+.direct-contacts {
+  padding: 10px;
+}
+
+.direct-contacts > button {
+  width: 100%;
+  min-height: 70px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.direct-contacts > button:hover,
+.direct-contacts > button.active {
+  border-color: rgba(56, 189, 248, 0.2);
+  background: #111a2e;
+}
+
+.direct-avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 900;
+}
+
+.direct-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.direct-contact-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.direct-contact-copy strong,
+.direct-contact-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.direct-contact-copy small {
+  margin-top: 4px;
+  color: var(--color-muted);
+}
+
+.direct-unread {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #042f2e;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.direct-chat {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #070b15;
+}
+
+.direct-mobile-back {
+  display: none;
+}
+
+.direct-messages {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.direct-bubble {
+  width: fit-content;
+  max-width: min(76%, 520px);
+  margin: 0 auto 10px 0;
+  padding: 11px 14px;
+  border-radius: 5px 16px 16px;
+  background: #172033;
+}
+
+.direct-bubble.mine {
+  margin-right: 0;
+  margin-left: auto;
+  border-radius: 16px 5px 16px 16px;
+  background: #164e63;
+}
+
+.direct-bubble p {
+  line-height: 1.45;
+}
+
+.direct-bubble small {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.direct-form {
+  padding: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.direct-form > p {
+  margin-bottom: 8px;
+  color: #fca5a5;
+  font-size: 0.82rem;
+}
+
+.direct-form > div {
+  display: flex;
+  gap: 9px;
+}
+
+.direct-form input {
+  min-width: 0;
+  flex: 1;
+  height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  outline: 0;
+  background: #111827;
+  color: #f8fafc;
+}
+
+.direct-form button {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 14px;
+  background: var(--gradient-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+.direct-empty,
+.direct-placeholder {
+  height: calc(100% - 76px);
+  padding: 28px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.direct-empty svg,
+.direct-placeholder svg {
+  margin-bottom: 12px;
+  color: var(--color-accent);
+  font-size: 2rem;
+}
+
+.direct-empty h2,
+.direct-placeholder h2 {
+  margin-bottom: 7px;
+  color: var(--color-text);
+  font-size: 1.05rem;
+}
+
+@media (max-width: 700px) {
+  .direct-page {
+    padding: 0;
+  }
+
+  .direct-layout {
+    height: 100vh;
+    grid-template-columns: 1fr;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .direct-layout.conversation-open .direct-inbox {
+    display: none;
+  }
+
+  .direct-layout:not(.conversation-open) .direct-chat {
+    display: none;
+  }
+
+  .direct-inbox {
+    border-right: 0;
+  }
+
+  .direct-mobile-back {
+    display: grid;
+  }
+
+  .direct-bubble {
+    max-width: 84%;
+  }
+}
+
 /*
  * CELULAR E TABLETS PEQUENOS (até 820px)
  * Substitui as três colunas por uma experiência semelhante a aplicativos

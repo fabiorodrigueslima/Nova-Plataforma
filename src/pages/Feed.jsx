@@ -66,7 +66,7 @@ export default function Feed() {
                     <button type="button" onClick={() => navigate("/sugestoes")} aria-label="Notificações">
                         <FiBell />
                     </button>
-                    <button type="button" onClick={() => navigate("/sala-virtual")} aria-label="Mensagens">
+                    <button type="button" onClick={() => navigate("/mensagens")} aria-label="Mensagens diretas">
                         <FiMessageCircle />
                     </button>
                     <button type="button" onClick={() => setMenuMobileAberto(true)} aria-label="Abrir menu">

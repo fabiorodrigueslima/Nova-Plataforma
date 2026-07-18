@@ -45,8 +45,6 @@ const FRONTEND_URL =
   process.env.RENDER_EXTERNAL_URL ||
   "http://localhost:5173";
 
-const BACKEND_URL =
-  process.env.BACKEND_URL || process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
 const frontendDistDir = path.resolve(__dirname, "../dist");
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim();
 const GOOGLE_CLIENT_ID_VALIDO = /^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(
@@ -1599,6 +1597,45 @@ app.post("/denuncias", autenticar, async (req, res) => {
 });
 
 /* ================= MENSAGENS PRIVADAS ================= */
+
+app.get("/conversas", autenticar, async (req, res) => {
+  try {
+    const conversas = await pool.query(
+      `
+      SELECT DISTINCT ON (outro.id)
+        outro.id AS usuario_id,
+        outro.nome,
+        outro.foto,
+        mp.mensagem AS ultima_mensagem,
+        mp.criado_em,
+        (
+          SELECT COUNT(*)::int
+          FROM mensagens_privadas nao_lida
+          WHERE nao_lida.remetente_id = outro.id
+            AND nao_lida.destinatario_id = $1
+            AND nao_lida.lida = false
+        ) AS nao_lidas
+      FROM mensagens_privadas mp
+      JOIN usuarios outro ON outro.id = CASE
+        WHEN mp.remetente_id = $1 THEN mp.destinatario_id
+        ELSE mp.remetente_id
+      END
+      WHERE mp.remetente_id = $1 OR mp.destinatario_id = $1
+      ORDER BY outro.id, mp.criado_em DESC
+      `,
+      [req.usuario.id],
+    );
+
+    conversas.rows.sort(
+      (a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime(),
+    );
+
+    res.json(conversas.rows);
+  } catch (error) {
+    console.error("Erro ao buscar conversas:", error.message);
+    res.status(500).json({ erro: "Erro ao buscar conversas." });
+  }
+});
 
 app.post("/mensagens", autenticar, async (req, res) => {
   try {

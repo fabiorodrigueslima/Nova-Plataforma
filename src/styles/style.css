@@ -6692,3 +6692,780 @@ body {
   }
 }
 
+/* ================= FEED MOBILE COM MENU VISIVEL ================= */
+
+@media (max-width: 820px) {
+  .feed-page,
+  .feed-layout {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 14px !important;
+    padding: 12px !important;
+    overflow-x: hidden !important;
+
+  }
+
+  .feed-page .sidebar,
+  .feed-layout .sidebar {
+    display: flex !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    position: sticky !important;
+    top: 8px !important;
+    z-index: 30 !important;
+    padding: 12px !important;
+    overflow: hidden !important;
+    border-radius: 16px !important;
+  }
+
+  .feed-page .sidebar-logo,
+  .feed-layout .sidebar-logo {
+    display: flex !important;
+    flex: 0 0 auto !important;
+    margin: 0 10px 0 0 !important;
+    padding: 0 !important;
+  }
+
+  .feed-page .sidebar-logo h2,
+  .feed-layout .sidebar-logo h2,
+  .feed-page .sidebar-title,
+  .feed-layout .sidebar-title,
+  .feed-page .sidebar-room,
+  .feed-layout .sidebar-room,
+  .feed-page .sidebar-bottom,
+  .feed-layout .sidebar-bottom,
+  .feed-page .sidebar-account,
+  .feed-layout .sidebar-account,
+  .feed-page .sidebar-about,
+  .feed-layout .sidebar-about,
+  .feed-page .sidebar-logout,
+  .feed-layout .sidebar-logout,
+  .feed-page .account-menu,
+  .feed-layout .account-menu {
+    display: none !important;
+  }
+
+  .feed-page .sidebar-section,
+  .feed-layout .sidebar-section {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    flex-direction: row !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    padding-bottom: 2px !important;
+    scrollbar-width: none;
+  }
+
+  .feed-page .sidebar-section::-webkit-scrollbar,
+  .feed-layout .sidebar-section::-webkit-scrollbar {
+    display: none;
+  }
+
+  .feed-page .sidebar-item,
+  .feed-layout .sidebar-item,
+  .feed-page .sidebar-see-more,
+  .feed-layout .sidebar-see-more {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: max-content !important;
+    min-height: 44px !important;
+    height: 44px !important;
+    margin: 0 !important;
+    padding: 0 14px !important;
+    border-radius: 12px !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    font-size: 0.9rem !important;
+  }
+
+  .feed-page .feed-center,
+  .feed-layout .feed-center {
+    width: 100% !important;
+    max-width: 680px !important;
+    margin: 0 auto !important;
+    overflow: visible !important;
+  }
+
+  .feed-page .right-panel,
+  .feed-layout .right-panel {
+    display: none !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .feed-page,
+  .feed-layout {
+    padding: 8px !important;
+  }
+
+  .feed-page .sidebar,
+  .feed-layout .sidebar {
+    top: 6px !important;
+    padding: 10px !important;
+  }
+
+  .feed-page .sidebar-logo-icon,
+  .feed-layout .sidebar-logo-icon {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    border-radius: 12px !important;
+  }
+
+  .feed-page .sidebar-item,
+  .feed-layout .sidebar-item,
+  .feed-page .sidebar-see-more,
+  .feed-layout .sidebar-see-more {
+    min-height: 42px !important;
+    height: 42px !important;
+    padding: 0 12px !important;
+    font-size: 0.84rem !important;
+  }
+
+  .feed-page .post-box,
+  .feed-layout .post-box,
+  .feed-page .feed-post,
+  .feed-layout .feed-post {
+    padding: 16px !important;
+  }
+}
+
+/* ================= EXPERIENCIA SOCIAL RESPONSIVA 2026 ================= */
+
+/*
+ * Contêiner principal do feed.
+ * Os gradientes ficam restritos à página social e não alteram as telas
+ * de autenticação, configurações ou páginas institucionais.
+ */
+.feed-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.12), transparent 28rem),
+    radial-gradient(circle at 90% 15%, rgba(20, 184, 166, 0.08), transparent 24rem),
+    #060914;
+}
+
+/*
+ * Componentes exclusivos do celular começam ocultos.
+ * Eles são ativados somente no breakpoint de até 820px.
+ */
+.mobile-app-header,
+.mobile-bottom-nav,
+.mobile-menu-overlay {
+  display: none;
+}
+
+/*
+ * DESKTOP GRANDE (a partir de 1181px)
+ * Organiza a página em três colunas:
+ * navegação, publicações e informações da comunidade.
+ */
+@media (min-width: 1181px) {
+  /* Centraliza o conteúdo e impede que as colunas fiquem largas demais. */
+  .feed-page {
+    width: min(1480px, 100%);
+    grid-template-columns: 260px minmax(560px, 760px) 340px !important;
+    gap: 28px !important;
+    padding: 28px 32px 48px !important;
+    margin: 0 auto;
+  }
+
+  /* Barra lateral translúcida e fixa durante a navegação do feed. */
+  .feed-page .sidebar {
+    width: 260px !important;
+    top: 28px !important;
+    height: calc(100vh - 56px) !important;
+    padding: 22px 16px !important;
+    border-color: rgba(148, 163, 184, 0.13) !important;
+    background: rgba(10, 15, 29, 0.88) !important;
+    backdrop-filter: blur(18px);
+  }
+
+  /* Separa visualmente a marca PostFan das opções de navegação. */
+  .feed-page .sidebar-logo {
+    padding: 4px 8px 22px !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  }
+
+  /* Destaque compacto da marca dentro da barra lateral. */
+  .feed-page .sidebar-logo-icon {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 13px !important;
+    box-shadow: 0 10px 28px rgba(37, 99, 235, 0.28);
+  }
+
+  /* Aparência padrão e área de clique dos temas. */
+  .feed-page .sidebar-item {
+    min-height: 44px;
+    border: 1px solid transparent;
+    border-radius: 12px !important;
+    font-size: 0.9rem;
+    transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  }
+
+  /* Feedback visual ao passar o mouse sobre um tema. */
+  .feed-page .sidebar-item:hover {
+    transform: translateX(3px);
+    border-color: rgba(148, 163, 184, 0.12);
+  }
+
+  /* Limita a largura do feed para manter os textos confortáveis para leitura. */
+  .feed-page .feed-center {
+    max-width: 760px !important;
+    padding-top: 0;
+  }
+
+  /* Superfícies compartilhadas pelo criador de post e pelas publicações. */
+  .feed-page .post-box,
+  .feed-page .feed-post {
+    border-color: rgba(148, 163, 184, 0.13) !important;
+    background: rgba(11, 16, 32, 0.92) !important;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22) !important;
+  }
+
+  /* Espaçamento interno do formulário de nova publicação. */
+  .feed-page .post-box {
+    padding: 22px !important;
+  }
+
+  /* Transição usada para destacar uma publicação sem deslocamentos bruscos. */
+  .feed-page .feed-post {
+    padding: 22px !important;
+    transition: border-color 180ms ease, transform 180ms ease;
+  }
+
+  /* Indica qual publicação está sob o cursor. */
+  .feed-page .feed-post:hover {
+    border-color: rgba(56, 189, 248, 0.24) !important;
+    transform: translateY(-2px);
+  }
+
+  /* Painel direito acompanha a rolagem e possui rolagem interna quando necessário. */
+  .feed-page .right-panel {
+    width: 340px !important;
+    top: 28px !important;
+    height: calc(100vh - 56px) !important;
+    gap: 18px;
+  }
+
+  /* Padroniza os cartões de perfil, pessoas online e rede do usuário. */
+  .feed-page .profile-card,
+  .feed-page .right-card {
+    background: rgba(11, 16, 32, 0.88) !important;
+    border-color: rgba(148, 163, 184, 0.13) !important;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.2) !important;
+  }
+}
+
+/*
+ * CELULAR E TABLETS PEQUENOS (até 820px)
+ * Substitui as três colunas por uma experiência semelhante a aplicativos
+ * sociais: cabeçalho fixo, feed em tela cheia e navegação inferior.
+ */
+@media (max-width: 820px) {
+  /* Reserva espaço para o cabeçalho e para a navegação inferior fixos. */
+  .feed-shell {
+    padding: 60px 0 72px;
+    background: #05070d;
+  }
+
+  /* Cabeçalho principal do aplicativo no celular. */
+  .mobile-app-header {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 100;
+    height: 60px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(8, 11, 20, 0.94);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    backdrop-filter: blur(18px);
+  }
+
+  /* Remove estilos nativos dos botões usados no cabeçalho e na barra inferior. */
+  .mobile-brand,
+  .mobile-header-actions button,
+  .mobile-bottom-nav button {
+    border: 0;
+    background: transparent;
+    color: #f8fafc;
+    cursor: pointer;
+  }
+
+  /* Marca PostFan clicável, alinhada à esquerda do cabeçalho. */
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    cursor: pointer;
+    border-radius: 11px;
+    transition: background 160ms ease, transform 160ms ease;
+  }
+
+  /* Mostra que a marca abre a explicação "Por que o PostFan?". */
+  .mobile-brand:hover {
+    background: rgba(30, 41, 59, 0.58);
+    transform: translateY(-1px);
+  }
+
+  /* Símbolo compacto da marca, adequado para telas pequenas. */
+  .mobile-brand > span {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #2563eb, #14b8a6);
+    font-size: 1rem;
+    font-weight: 900;
+  }
+
+  /* Nome da plataforma exibido ao lado do símbolo. */
+  .mobile-brand strong {
+    font-size: 1.15rem;
+    letter-spacing: -0.03em;
+  }
+
+  /* Agrupa pesquisa, notificações, mensagens e menu da conta. */
+  .mobile-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /* Garante área de toque confortável para cada ação do cabeçalho. */
+  .mobile-header-actions button {
+    width: 39px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-size: 1.25rem;
+  }
+
+  /*
+   * Fundo escurecido do menu da conta.
+   * Clicar nessa região fecha o painel; o conteúdo interno interrompe o clique.
+   */
+  .mobile-menu-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.72);
+    backdrop-filter: blur(7px);
+  }
+
+  /* Painel inferior com as configurações e ações da conta. */
+  .mobile-account-menu {
+    width: min(100%, 560px);
+    max-height: min(82vh, 680px);
+    padding: 18px 18px max(20px, env(safe-area-inset-bottom));
+    overflow-y: auto;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-bottom: 0;
+    border-radius: 24px 24px 0 0;
+    background: #0b1020;
+    box-shadow: 0 -24px 70px rgba(0, 0, 0, 0.48);
+  }
+
+  /* Indicador visual de painel deslizante, comum em aplicativos móveis. */
+  .mobile-account-menu::before {
+    content: "";
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: 0 auto 18px;
+    border-radius: 999px;
+    background: #334155;
+  }
+
+  /* Cabeçalho interno do menu, com título e botão de fechar. */
+  .mobile-menu-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  /* Organiza o rótulo "Minha conta" acima do nome PostFan. */
+  .mobile-menu-heading div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  /* Rótulo secundário do cabeçalho do menu. */
+  .mobile-menu-heading span {
+    color: #94a3b8;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* Título principal do menu da conta. */
+  .mobile-menu-heading strong {
+    color: #f8fafc;
+    font-size: 1.35rem;
+  }
+
+  /* Botão circular que fecha o painel. */
+  .mobile-menu-heading button {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 50%;
+    background: #111827;
+    color: #e2e8f0;
+    font-size: 1.25rem;
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  }
+
+  /* Realça o botão de fechar quando o menu é usado com mouse. */
+  .mobile-menu-heading button:hover {
+    border-color: rgba(103, 232, 249, 0.34);
+    background: #172033;
+    transform: translateY(-1px);
+  }
+
+  /* Lista vertical: perfil, edição, configurações, privacidade e ajuda. */
+  .mobile-account-menu nav {
+    display: grid;
+    gap: 7px;
+  }
+
+  /* Aparência e área de toque compartilhadas pelas opções do menu. */
+  .mobile-account-menu nav button,
+  .mobile-menu-logout {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 15px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: #10172a;
+    color: #e2e8f0;
+    font-size: 0.94rem;
+    font-weight: 750;
+    text-align: left;
+    cursor: pointer;
+    transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  }
+
+  /* Indica visualmente que cada opção do menu pode ser clicada. */
+  .mobile-account-menu nav button:hover {
+    border-color: rgba(103, 232, 249, 0.22);
+    background: #172033;
+    transform: translateX(3px);
+  }
+
+  /* Cor de destaque dos ícones das opções da conta. */
+  .mobile-account-menu nav button svg,
+  .mobile-menu-logout svg {
+    flex: 0 0 auto;
+    color: #67e8f9;
+    font-size: 1.18rem;
+  }
+
+  /* Ação de saída usa cor de alerta para evitar cliques acidentais. */
+  .mobile-menu-logout {
+    margin-top: 14px;
+    border-color: rgba(248, 113, 113, 0.18);
+    background: rgba(127, 29, 29, 0.18);
+    color: #fecaca;
+  }
+
+  /* Mantém o destaque de alerta da saída também durante o hover. */
+  .mobile-menu-logout:hover {
+    border-color: rgba(248, 113, 113, 0.4);
+    background: rgba(127, 29, 29, 0.3);
+    transform: translateX(3px);
+  }
+
+  /* Ícone da ação de saída. */
+  .mobile-menu-logout svg {
+    color: #f87171;
+  }
+
+  /* No celular o feed deixa de usar a grade de três colunas. */
+  .feed-page {
+    display: block !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* A navegação lateral do computador não é exibida no celular. */
+  .feed-page .sidebar {
+    display: none !important;
+  }
+
+  /* Coluna principal ocupa a largura disponível, com limite para tablets. */
+  .feed-page .feed-center {
+    width: 100% !important;
+    max-width: 620px !important;
+    margin: 0 auto !important;
+  }
+
+  /* Cards encostam nas laterais como em feeds de redes sociais. */
+  .feed-page .post-box,
+  .feed-page .feed-post,
+  .feed-page .empty-feed {
+    margin: 0 0 8px !important;
+    border-width: 1px 0 !important;
+    border-radius: 0 !important;
+    background: #0a0e19 !important;
+    box-shadow: none !important;
+  }
+
+  /* Espaçamento compacto para criação e leitura de publicações. */
+  .feed-page .post-box,
+  .feed-page .feed-post {
+    padding: 16px !important;
+  }
+
+  /* Faixa que informa qual tema está selecionado no feed. */
+  .feed-page .feed-tabs {
+    margin: 0 !important;
+    padding: 10px 14px;
+    background: #080b14;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  /* Mantém controles e ações lado a lado em telas pequenas. */
+  .feed-page .post-actions,
+  .feed-page .feed-post-actions {
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+
+  /* Formulário de publicação usa duas colunas antes do botão principal. */
+  .feed-page .post-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px !important;
+  }
+
+  /* O botão Publicar ocupa toda a última linha do formulário. */
+  .feed-page .post-actions .publish-btn {
+    grid-column: 1 / -1;
+  }
+
+  /* Controles recebem largura e altura adequadas para toque. */
+  .feed-page .post-actions button,
+  .feed-page .post-actions select,
+  .feed-page .file-btn,
+  .feed-page .publish-btn {
+    width: 100% !important;
+    min-height: 44px;
+  }
+
+  /* Curtir, comentar e compartilhar dividem igualmente a largura do card. */
+  .feed-page .feed-post-actions button {
+    width: auto !important;
+    flex: 1 1 0;
+    min-height: 44px;
+    padding: 0 6px !important;
+    font-size: 0.84rem;
+    background: transparent !important;
+  }
+
+  /* Mídia ocupa toda a largura do card para valorizar fotos e vídeos. */
+  .feed-page .post-media {
+    width: calc(100% + 32px) !important;
+    max-height: 70vh !important;
+    margin: 14px -16px 4px !important;
+    border-radius: 0 !important;
+    object-fit: cover;
+  }
+
+  /* Navegação principal fixa na parte inferior do celular. */
+  .mobile-bottom-nav {
+    position: fixed;
+    inset: auto 0 0;
+    z-index: 100;
+    min-height: 66px;
+    padding: 6px max(8px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    background: rgba(8, 11, 20, 0.96);
+    border-top: 1px solid rgba(148, 163, 184, 0.15);
+    backdrop-filter: blur(18px);
+  }
+
+  /* Cada destino da navegação recebe a mesma largura. */
+  .mobile-bottom-nav button {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    color: #8f9bb0;
+    font-size: 1.3rem;
+  }
+
+  /* Legenda curta exibida abaixo dos ícones. */
+  .mobile-bottom-nav button > span:last-child {
+    font-size: 0.66rem;
+    font-weight: 700;
+  }
+
+  /* Cor que identifica a seção atualmente selecionada. */
+  .mobile-bottom-nav button.active {
+    color: #5eead4;
+  }
+
+  /* Destaque central para a ação de criar uma publicação. */
+  .mobile-create-icon {
+    width: 38px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #2563eb, #14b8a6);
+    color: #fff;
+    font-size: 1.2rem !important;
+  }
+}
+
+/* Ajustes finais para aparelhos muito estreitos. */
+@media (max-width: 380px) {
+  .mobile-header-actions button {
+    width: 38px;
+  }
+
+  .mobile-bottom-nav button > span:last-child {
+    font-size: 0.61rem;
+  }
+}
+
+/*
+ * DESKTOP E TABLETS (a partir de 821px)
+ * Mantém Sala Virtual, Minha conta, Configurações e Sair acessíveis.
+ * Os temas aparecem de forma natural, sem uma pequena área de rolagem cortada.
+ */
+@media (min-width: 821px) {
+  /* A altura acompanha o conteúdo para que nenhum bloco fique escondido. */
+  .feed-page .sidebar {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Remove a rolagem interna que cortava parte da lista de temas. */
+  .feed-page .sidebar-section {
+    flex: 0 0 auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    padding-right: 0;
+  }
+
+  /* Impede que Sala Virtual e Minha conta sejam comprimidas pela lista de temas. */
+  .feed-page .sidebar-room,
+  .feed-page .sidebar-bottom {
+    display: block !important;
+    flex: 0 0 auto !important;
+  }
+
+  /* Compacta o convite para a Sala Virtual sem retirar sua descrição. */
+  .feed-page .sidebar-room {
+    margin-top: 12px !important;
+    padding: 12px !important;
+  }
+
+  /* Texto auxiliar menor para economizar altura no desktop. */
+  .feed-page .sidebar-room p {
+    margin-top: 7px !important;
+    font-size: 0.76rem !important;
+    line-height: 1.4 !important;
+  }
+
+  /* Separa as opções pessoais das opções de debate. */
+  .feed-page .sidebar-bottom {
+    margin-top: 10px !important;
+    padding-top: 10px !important;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  /* Altura consistente para Minha conta e Sair da plataforma. */
+  .feed-page .sidebar-account,
+  .feed-page .sidebar-logout {
+    min-height: 42px !important;
+  }
+}
+
+/*
+ * REFINAMENTO DA BARRA LATERAL EM MONITORES GRANDES
+ * Reduz a densidade vertical e mantém um acabamento profissional.
+ */
+@media (min-width: 1181px) {
+  /* A lateral pode crescer com o conteúdo, preservando ao menos a altura da tela. */
+  .feed-page .sidebar {
+    height: auto !important;
+    min-height: calc(100vh - 56px) !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Aproxima a marca das opções sem perder a divisão visual. */
+  .feed-page .sidebar-logo {
+    margin-bottom: 16px !important;
+    padding-bottom: 16px !important;
+  }
+
+  /* Título discreto para não competir com os temas. */
+  .feed-page .sidebar-title {
+    margin-bottom: 8px !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 0.08em !important;
+  }
+
+  /* Espaço uniforme entre os botões de tema. */
+  .feed-page .sidebar-section {
+    gap: 5px !important;
+  }
+
+  /* Botões mais compactos, mantendo boa área de clique. */
+  .feed-page .sidebar-item {
+    min-height: 40px !important;
+    padding: 0 12px !important;
+  }
+
+  /* Controle que expande e recolhe todos os temas. */
+  .feed-page .sidebar-see-more {
+    min-height: 38px !important;
+    margin-top: 3px !important;
+  }
+
+  /* Raio visual consistente no cartão da Sala Virtual. */
+  .feed-page .sidebar-room {
+    border-radius: 16px !important;
+  }
+
+  /* Cartão explicativo do PostFan mais compacto. */
+  .feed-page .sidebar-about {
+    padding: 14px !important;
+    border-radius: 14px !important;
+  }
+}
+

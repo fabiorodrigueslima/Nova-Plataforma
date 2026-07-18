@@ -1,13 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/style.css";
 
-export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo }) {
+export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo, pedidoAbrirPostfan = 0 }) {
     const navigate = useNavigate();
 
     const [mostrarConta, setMostrarConta] = useState(false);
     const [mostrarPostfan, setMostrarPostfan] = useState(false);
     const [mostrarMaisTemas, setMostrarMaisTemas] = useState(false);
+
+    // Permite que o logotipo do cabeçalho mobile abra a mesma explicação do desktop.
+    useEffect(() => {
+        if (pedidoAbrirPostfan > 0) {
+            setMostrarPostfan(true);
+        }
+    }, [pedidoAbrirPostfan]);
 
     const temas = [
         "Todos",
@@ -30,6 +37,10 @@ export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo }) {
         "Meio Ambiente",
         "Notícias",
     ];
+
+    const temasVisiveis = mostrarMaisTemas
+        ? [...temas, ...maisTemas]
+        : temas.slice(0, 5);
 
     const icones = {
         Todos: "🌍",
@@ -79,7 +90,7 @@ export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo }) {
                 <div className="sidebar-section">
                     <span className="sidebar-title">MENU DEBATES</span>
 
-                    {temas.map((tema) => (
+                    {temasVisiveis.map((tema) => (
                         <button
                             key={tema}
                             className={`sidebar-item ${temaAtivo === tema ? "active" : ""}`}
@@ -88,17 +99,6 @@ export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo }) {
                             {icones[tema]} {tema}
                         </button>
                     ))}
-
-                    {mostrarMaisTemas &&
-                        maisTemas.map((tema) => (
-                            <button
-                                key={tema}
-                                className={`sidebar-item ${temaAtivo === tema ? "active" : ""}`}
-                                onClick={() => escolherTema(tema)}
-                            >
-                                {icones[tema]} {tema}
-                            </button>
-                        ))}
 
                     <button
                         className="sidebar-see-more"

@@ -39,6 +39,31 @@ function Avatar({ className = "post-avatar", foto, nome, onClick }) {
     );
 }
 
+/*
+ * Converte endereços locais de uploads para o endereço usado pelo aparelho.
+ * Isso evita que fotos salvas como "localhost" funcionem no computador,
+ * mas desapareçam quando o feed é aberto por um celular na mesma rede.
+ */
+function resolverUrlMidia(url) {
+    if (!url) return "";
+
+    const apiBase = api.defaults.baseURL || window.location.origin;
+
+    try {
+        const endereco = new URL(url, apiBase);
+        const origemLocal = ["localhost", "127.0.0.1"].includes(endereco.hostname);
+        const acessoExterno = !["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+        if (origemLocal && acessoExterno) {
+            endereco.hostname = window.location.hostname;
+        }
+
+        return endereco.toString();
+    } catch {
+        return url;
+    }
+}
+
 export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }) {
     const navigate = useNavigate();
     const dialog = useNotification();
@@ -451,7 +476,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
                         const textoPost = post.conteudo || post.texto || "";
                         const autor = post.autor || post.nome || post.usuario_nome || "Usuário";
                         const fotoAutor = post.fotoAutor || post.foto || post.usuario_foto || "";
-                        const imagemPost = post.imagem || post.arquivoUrl || "";
+                        const imagemPost = resolverUrlMidia(post.imagem || post.arquivoUrl || "");
                         const criadoEm = post.criado_em
                             ? new Date(post.criado_em).toLocaleString("pt-BR")
                             : post.criadoEm || "";

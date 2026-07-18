@@ -238,7 +238,8 @@ async function salvarArquivoEnviado(file, folder = "postfan/uploads") {
   }
 
   return {
-    url: `${BACKEND_URL}/uploads/${file.filename}`,
+    // Caminho relativo mantém os uploads acessíveis no computador e no celular.
+    url: `/uploads/${file.filename}`,
     tipo: file.mimetype,
     nome: file.originalname,
   };

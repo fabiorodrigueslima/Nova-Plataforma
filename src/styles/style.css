@@ -7288,11 +7288,15 @@ body {
 
   /* Mídia ocupa toda a largura do card para valorizar fotos e vídeos. */
   .feed-page .post-media {
+    display: block !important;
     width: calc(100% + 32px) !important;
+    height: auto !important;
+    min-height: 1px;
     max-height: 70vh !important;
     margin: 14px -16px 4px !important;
     border-radius: 0 !important;
-    object-fit: cover;
+    object-fit: contain !important;
+    background: #020617;
   }
 
   /* Navegação principal fixa na parte inferior do celular. */

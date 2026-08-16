@@ -32,7 +32,7 @@ const pool = new Pool({
 });
 
 pool
-  .connect()
+  .query("SELECT 1")
   .then(() => console.log("✅ PostgreSQL conectado no Render"))
   .catch((err) => console.log("❌ Erro PostgreSQL", err));
 

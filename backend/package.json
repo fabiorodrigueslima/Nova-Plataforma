@@ -5,24 +5,47 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "prisma:migrate:dev": "node scripts/run-prisma-migrate-dev.js",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:seed": "prisma db seed",
+    "prisma:connection:test": "node scripts/test-prisma-connection.js",
+    "db:create:dev": "node scripts/create-dev-database.js",
+    "db:validate": "node scripts/validate-database.js",
+    "db:rotate-local-password": "node scripts/rotate-local-postgres-password.js",
+    "test:email": "node scripts/test-email-transport.js",
+    "test:upload": "node scripts/test-upload.js",
+    "test:startup:no-ddl": "node scripts/verify-startup-no-ddl.js",
+    "test:db:prepare": "node scripts/prepare-test-database.js",
+    "test": "npm run test:db:prepare && vitest run",
+    "test:integration": "npm run test:db:prepare && vitest run tests/integration",
+    "test:watch": "npm run test:db:prepare && vitest"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
+    "express-rate-limit": "^8.6.2",
     "google-auth-library": "^10.9.0",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.1.1",
-    "nodemailer": "^8.0.7",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.5",
     "pg": "^8.20.0",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "prisma": "^6.19.3",
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.10"
   }
 }

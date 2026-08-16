@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id                 Int                @id @default(autoincrement())
+  nome               String             @db.VarChar(150)
+  email              String             @unique @db.VarChar(150)
+  senha              String?
+  googleId           String?            @unique @map("google_id")
+  provider           String             @default("local") @db.VarChar(30)
+  foto               String?
+  bio                String?
+  essenciaRepresenta String?            @map("essencia_representa")
+  essenciaTema       String?            @map("essencia_tema")
+  essenciaFrase      String?            @map("essencia_frase")
+  abertoPara         String?            @map("aberto_para")
+  ultimoAcesso       DateTime?          @map("ultimo_acesso") @db.Timestamp(6)
+  tokenRecuperacao   String?            @map("token_recuperacao")
+  tokenExpira        DateTime?          @map("token_expira") @db.Timestamp(6)
+  criadoEm           DateTime           @default(now()) @map("criado_em") @db.Timestamp(6)
+  posts              Post[]
+  comentarios        Comentario[]
+  curtidas           Curtida[]
+  compartilhamentos  Compartilhamento[]
+  seguindo           Seguidor[]         @relation("UsuarioSeguidor")
+  seguidores         Seguidor[]         @relation("UsuarioSeguindo")
+  mensagensEnviadas  MensagemPrivada[]  @relation("MensagemRemetente")
+  mensagensRecebidas MensagemPrivada[]  @relation("MensagemDestinatario")
+  gruposCriados      Grupo[]
+  gruposComoMembro   GrupoMembro[]
+  mensagensEmGrupos  GrupoMensagem[]
+  solicitacoesGrupo  GrupoSolicitacao[]
+  denunciasFeitas    Denuncia[]         @relation("Denunciante")
+  denunciasRecebidas Denuncia[]         @relation("UsuarioDenunciado")
+
+  @@map("usuarios")
+}
+
+model ExclusaoConta {
+  id           Int       @id @default(autoincrement())
+  usuarioId    Int?      @map("usuario_id")
+  nome         String?   @db.VarChar(150)
+  email        String?   @db.VarChar(150)
+  motivo       String?
+  status       String    @default("concluida") @db.VarChar(50)
+  solicitadoEm DateTime  @default(now()) @map("solicitado_em") @db.Timestamp(6)
+  concluidoEm  DateTime? @map("concluido_em") @db.Timestamp(6)
+
+  @@index([solicitadoEm], map: "idx_exclusoes_conta_solicitado_em")
+  @@map("exclusoes_conta")
+}
+
+model Post {
+  id                Int                @id @default(autoincrement())
+  usuarioId         Int                @map("usuario_id")
+  conteudo          String?
+  tema              String?            @db.VarChar(100)
+  sentimento        String?            @db.VarChar(100)
+  imagem            String?
+  tipoArquivo       String?            @map("tipo_arquivo") @db.VarChar(50)
+  nomeArquivo       String?            @map("nome_arquivo")
+  criadoEm          DateTime           @default(now()) @map("criado_em") @db.Timestamp(6)
+  atualizadoEm      DateTime           @default(now()) @map("atualizado_em") @db.Timestamp(6)
+  usuario           Usuario            @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  comentarios       Comentario[]
+  curtidas          Curtida[]
+  compartilhamentos Compartilhamento[]
+  denuncias         Denuncia[]
+
+  @@index([usuarioId], map: "idx_posts_usuario_id")
+  @@index([criadoEm(sort: Desc)], map: "idx_posts_criado_em")
+  @@map("posts")
+}
+
+model Curtida {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int      @map("usuario_id")
+  postId    Int      @map("post_id")
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, postId])
+  @@index([postId], map: "idx_curtidas_post_id")
+  @@map("curtidas")
+}
+
+model Comentario {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int      @map("usuario_id")
+  postId    Int      @map("post_id")
+  conteudo  String
+  texto     String?
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId], map: "idx_comentarios_post_id")
+  @@index([usuarioId], map: "idx_comentarios_usuario_id")
+  @@map("comentarios")
+}
+
+model Seguidor {
+  id         Int      @id @default(autoincrement())
+  seguidorId Int      @map("seguidor_id")
+  seguindoId Int      @map("seguindo_id")
+  criadoEm   DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  seguidor   Usuario  @relation("UsuarioSeguidor", fields: [seguidorId], references: [id], onDelete: Cascade)
+  seguindo   Usuario  @relation("UsuarioSeguindo", fields: [seguindoId], references: [id], onDelete: Cascade)
+
+  @@unique([seguidorId, seguindoId])
+  @@index([seguidorId], map: "idx_seguidores_seguidor_id")
+  @@index([seguindoId], map: "idx_seguidores_seguindo_id")
+  @@map("seguidores")
+}
+
+model Compartilhamento {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int      @map("usuario_id")
+  postId    Int      @map("post_id")
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId], map: "idx_compartilhamentos_post_id")
+  @@index([usuarioId], map: "idx_compartilhamentos_usuario_id")
+  @@map("compartilhamentos")
+}
+
+model Denuncia {
+  id            Int      @id @default(autoincrement())
+  denuncianteId Int?     @map("denunciante_id")
+  usuarioId     Int?     @map("usuario_id")
+  postId        Int?     @map("post_id")
+  motivo        String
+  status        String   @default("pendente") @db.VarChar(50)
+  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  denunciante   Usuario? @relation("Denunciante", fields: [denuncianteId], references: [id], onDelete: SetNull)
+  usuario       Usuario? @relation("UsuarioDenunciado", fields: [usuarioId], references: [id], onDelete: Cascade)
+  post          Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([status, criadoEm], map: "idx_denuncias_status_criado_em")
+  @@index([usuarioId], map: "idx_denuncias_usuario_id")
+  @@index([postId], map: "idx_denuncias_post_id")
+  @@map("denuncias")
+}
+
+model MensagemPrivada {
+  id             Int      @id @default(autoincrement())
+  remetenteId    Int      @map("remetente_id")
+  destinatarioId Int      @map("destinatario_id")
+  mensagem       String
+  lida           Boolean  @default(false)
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  remetente      Usuario  @relation("MensagemRemetente", fields: [remetenteId], references: [id], onDelete: Cascade)
+  destinatario   Usuario  @relation("MensagemDestinatario", fields: [destinatarioId], references: [id], onDelete: Cascade)
+
+  @@index([destinatarioId], map: "idx_mensagens_privadas_destinatario_id")
+  @@index([remetenteId, destinatarioId, criadoEm(sort: Desc)], map: "idx_mensagens_privadas_conversa")
+  @@index([destinatarioId, lida], map: "idx_mensagens_privadas_nao_lidas")
+  @@map("mensagens_privadas")
+}
+
+model Grupo {
+  id            Int                @id @default(autoincrement())
+  donoId        Int                @map("dono_id")
+  nome          String             @db.VarChar(150)
+  descricao     String
+  categoria     String             @default("Geral") @db.VarChar(100)
+  codigoConvite String             @unique @map("codigo_convite") @db.VarChar(20)
+  tipo          String             @default("publico") @db.VarChar(30)
+  testeExpiraEm DateTime?          @map("teste_expira_em") @db.Timestamp(6)
+  acessoPago    Boolean            @default(false) @map("acesso_pago")
+  criadoEm      DateTime           @default(now()) @map("criado_em") @db.Timestamp(6)
+  dono          Usuario            @relation(fields: [donoId], references: [id], onDelete: Cascade)
+  membros       GrupoMembro[]
+  mensagens     GrupoMensagem[]
+  solicitacoes  GrupoSolicitacao[]
+
+  @@index([donoId], map: "idx_grupos_dono_id")
+  @@index([tipo, criadoEm(sort: Desc)], map: "idx_grupos_tipo_criado_em")
+  @@map("grupos")
+}
+
+model GrupoMembro {
+  id        Int      @id @default(autoincrement())
+  grupoId   Int      @map("grupo_id")
+  usuarioId Int      @map("usuario_id")
+  papel     String   @default("membro") @db.VarChar(50)
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  grupo     Grupo    @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([grupoId, usuarioId])
+  @@index([usuarioId], map: "idx_grupo_membros_usuario_id")
+  @@map("grupo_membros")
+}
+
+model GrupoMensagem {
+  id        Int      @id @default(autoincrement())
+  grupoId   Int      @map("grupo_id")
+  usuarioId Int      @map("usuario_id")
+  mensagem  String
+  criadoEm  DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  grupo     Grupo    @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([grupoId, criadoEm], map: "idx_grupo_mensagens_grupo_id")
+  @@index([usuarioId], map: "idx_grupo_mensagens_usuario_id")
+  @@map("grupo_mensagens")
+}
+
+model GrupoSolicitacao {
+  id           Int      @id @default(autoincrement())
+  grupoId      Int      @map("grupo_id")
+  usuarioId    Int      @map("usuario_id")
+  status       String   @default("pendente") @db.VarChar(30)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamp(6)
+  grupo        Grupo    @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  usuario      Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([grupoId, usuarioId])
+  @@index([grupoId, status], map: "idx_grupo_solicitacoes_grupo_status")
+  @@index([usuarioId], map: "idx_grupo_solicitacoes_usuario_id")
+  @@map("grupo_solicitacoes")
+}

@@ -28,6 +28,7 @@ const { OAuth2Client } = require("google-auth-library");
 const cloudinary = require("cloudinary").v2;
 const pool = require("./db");
 const { bloquearSeNecessario } = require("./moderacao");
+const userService = require("./src/modules/users/user.service");
 
 const app = express();
 
@@ -256,204 +257,6 @@ pool
     console.error(error.message);
   });
 
-/* ================= CRIAR TABELAS ================= */
-
-async function criarTabelas() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS usuarios (
-        id SERIAL PRIMARY KEY,
-        nome VARCHAR(150) NOT NULL,
-        email VARCHAR(150) UNIQUE NOT NULL,
-        senha TEXT,
-        google_id TEXT UNIQUE,
-        provider VARCHAR(30) DEFAULT 'local',
-        foto TEXT,
-        bio TEXT,
-        essencia_representa TEXT,
-        essencia_tema TEXT,
-        essencia_frase TEXT,
-        aberto_para TEXT,
-        ultimo_acesso TIMESTAMP,
-        token_recuperacao TEXT,
-        token_expira TIMESTAMP,
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS exclusoes_conta (
-        id SERIAL PRIMARY KEY,
-        usuario_id INTEGER,
-        nome VARCHAR(150),
-        email VARCHAR(150),
-        motivo TEXT,
-        status VARCHAR(50) DEFAULT 'concluida',
-        solicitado_em TIMESTAMP DEFAULT NOW(),
-        concluido_em TIMESTAMP
-      );
-
-      CREATE TABLE IF NOT EXISTS posts (
-        id SERIAL PRIMARY KEY,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        conteudo TEXT,
-        tema VARCHAR(100),
-        sentimento VARCHAR(100),
-        imagem TEXT,
-        tipo_arquivo VARCHAR(50),
-        nome_arquivo TEXT,
-        criado_em TIMESTAMP DEFAULT NOW(),
-        atualizado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS curtidas (
-        id SERIAL PRIMARY KEY,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-        criado_em TIMESTAMP DEFAULT NOW(),
-        UNIQUE(usuario_id, post_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS comentarios (
-        id SERIAL PRIMARY KEY,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-        conteudo TEXT NOT NULL,
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS seguidores (
-        id SERIAL PRIMARY KEY,
-        seguidor_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        seguindo_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        criado_em TIMESTAMP DEFAULT NOW(),
-        UNIQUE(seguidor_id, seguindo_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS compartilhamentos (
-        id SERIAL PRIMARY KEY,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS denuncias (
-        id SERIAL PRIMARY KEY,
-        denunciante_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE,
-        motivo TEXT NOT NULL,
-        status VARCHAR(50) DEFAULT 'pendente',
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS mensagens_privadas (
-        id SERIAL PRIMARY KEY,
-        remetente_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        destinatario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        mensagem TEXT NOT NULL,
-        lida BOOLEAN DEFAULT false,
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS grupos (
-        id SERIAL PRIMARY KEY,
-        dono_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        nome VARCHAR(150) NOT NULL,
-        descricao TEXT NOT NULL,
-        categoria VARCHAR(100) DEFAULT 'Geral',
-        codigo_convite VARCHAR(20) UNIQUE NOT NULL,
-        tipo VARCHAR(30) DEFAULT 'publico',
-        teste_expira_em TIMESTAMP,
-        acesso_pago BOOLEAN DEFAULT false,
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS grupo_membros (
-        id SERIAL PRIMARY KEY,
-        grupo_id INTEGER REFERENCES grupos(id) ON DELETE CASCADE,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        papel VARCHAR(50) DEFAULT 'membro',
-        criado_em TIMESTAMP DEFAULT NOW(),
-        UNIQUE(grupo_id, usuario_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS grupo_mensagens (
-        id SERIAL PRIMARY KEY,
-        grupo_id INTEGER REFERENCES grupos(id) ON DELETE CASCADE,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        mensagem TEXT NOT NULL,
-        criado_em TIMESTAMP DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS grupo_solicitacoes (
-        id SERIAL PRIMARY KEY,
-        grupo_id INTEGER REFERENCES grupos(id) ON DELETE CASCADE,
-        usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
-        status VARCHAR(30) DEFAULT 'pendente',
-        criado_em TIMESTAMP DEFAULT NOW(),
-        atualizado_em TIMESTAMP DEFAULT NOW(),
-        UNIQUE(grupo_id, usuario_id)
-      );
-
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS foto TEXT;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS bio TEXT;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_representa TEXT;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_tema TEXT;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS essencia_frase TEXT;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aberto_para TEXT;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_acesso TIMESTAMP;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_recuperacao TEXT;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_expira TIMESTAMP;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS google_id TEXT UNIQUE;
-      ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS provider VARCHAR(30) DEFAULT 'local';
-      ALTER TABLE usuarios ALTER COLUMN senha DROP NOT NULL;
-
-      ALTER TABLE posts ADD COLUMN IF NOT EXISTS conteudo TEXT;
-      ALTER TABLE posts ADD COLUMN IF NOT EXISTS tema VARCHAR(100);
-      ALTER TABLE posts ADD COLUMN IF NOT EXISTS sentimento VARCHAR(100);
-      ALTER TABLE posts ADD COLUMN IF NOT EXISTS imagem TEXT;
-      ALTER TABLE posts ADD COLUMN IF NOT EXISTS tipo_arquivo VARCHAR(50);
-      ALTER TABLE posts ADD COLUMN IF NOT EXISTS nome_arquivo TEXT;
-      ALTER TABLE posts ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT NOW();
-
-      ALTER TABLE comentarios ADD COLUMN IF NOT EXISTS conteudo TEXT;
-      ALTER TABLE comentarios ADD COLUMN IF NOT EXISTS texto TEXT;
-      UPDATE comentarios
-      SET conteudo = texto
-      WHERE conteudo IS NULL AND texto IS NOT NULL;
-      UPDATE comentarios
-      SET texto = conteudo
-      WHERE texto IS NULL AND conteudo IS NOT NULL;
-
-      ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE;
-      ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS post_id INTEGER REFERENCES posts(id) ON DELETE CASCADE;
-      ALTER TABLE denuncias ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'pendente';
-
-      ALTER TABLE mensagens_privadas ADD COLUMN IF NOT EXISTS lida BOOLEAN DEFAULT false;
-
-      ALTER TABLE grupos ADD COLUMN IF NOT EXISTS tipo VARCHAR(30) DEFAULT 'publico';
-      ALTER TABLE grupos ADD COLUMN IF NOT EXISTS teste_expira_em TIMESTAMP;
-      ALTER TABLE grupos ADD COLUMN IF NOT EXISTS acesso_pago BOOLEAN DEFAULT false;
-
-      UPDATE grupos SET tipo = 'publico' WHERE tipo IS NULL;
-
-      CREATE INDEX IF NOT EXISTS idx_posts_usuario_id ON posts(usuario_id);
-      CREATE INDEX IF NOT EXISTS idx_posts_criado_em ON posts(criado_em DESC);
-      CREATE INDEX IF NOT EXISTS idx_comentarios_post_id ON comentarios(post_id);
-      CREATE INDEX IF NOT EXISTS idx_seguidores_seguidor_id ON seguidores(seguidor_id);
-      CREATE INDEX IF NOT EXISTS idx_seguidores_seguindo_id ON seguidores(seguindo_id);
-      CREATE INDEX IF NOT EXISTS idx_mensagens_privadas_destinatario_id ON mensagens_privadas(destinatario_id);
-      CREATE INDEX IF NOT EXISTS idx_grupo_membros_usuario_id ON grupo_membros(usuario_id);
-      CREATE INDEX IF NOT EXISTS idx_grupo_mensagens_grupo_id ON grupo_mensagens(grupo_id);
-    `);
-
-    console.log("✅ Tabelas verificadas/atualizadas com sucesso!");
-  } catch (error) {
-    console.error("❌ Erro ao criar/atualizar tabelas:", error.message);
-  }
-}
-
-criarTabelas();
-
 /* ================= FUNÇÕES ================= */
 
 function gerarCodigoGrupo() {
@@ -531,11 +334,7 @@ function autenticar(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.usuario = decoded;
 
-    pool
-      .query("UPDATE usuarios SET ultimo_acesso = NOW() WHERE id = $1", [
-        decoded.id,
-      ])
-      .catch(() => {});
+    userService.touchLastAccess(decoded.id).catch(() => {});
 
     next();
   } catch {
@@ -941,25 +740,13 @@ app.post("/resetar", async (req, res) => {
 
 app.get("/me", autenticar, async (req, res) => {
   try {
-    const usuario = await pool.query(
-      `
-      SELECT 
-        id, nome, email, foto, bio, criado_em,
-        essencia_representa,
-        essencia_tema,
-        essencia_frase,
-        aberto_para
-      FROM usuarios
-      WHERE id = $1
-      `,
-      [req.usuario.id],
-    );
+    const usuario = await userService.findPrivateProfile(req.usuario.id);
 
-    if (usuario.rows.length === 0) {
+    if (!usuario) {
       return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
-    res.json(usuario.rows[0]);
+    res.json(usuario);
   } catch {
     res.status(500).json({ erro: "Erro ao buscar usuário." });
   }
@@ -968,54 +755,18 @@ app.get("/me", autenticar, async (req, res) => {
 /* ================= EXCLUIR CONTA ================= */
 
 app.delete("/conta", autenticar, async (req, res) => {
-  const client = await pool.connect();
-
   try {
     const { motivo } = req.body || {};
+    const deleted = await userService.deleteAccount(req.usuario.id, motivo);
 
-    await client.query("BEGIN");
-
-    const usuario = await client.query(
-      "SELECT id, nome, email FROM usuarios WHERE id = $1",
-      [req.usuario.id],
-    );
-
-    if (usuario.rows.length === 0) {
-      await client.query("ROLLBACK");
+    if (!deleted) {
       return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
-    await client.query(
-      `
-      INSERT INTO exclusoes_conta (
-        usuario_id,
-        nome,
-        email,
-        motivo,
-        status,
-        concluido_em
-      )
-      VALUES ($1, $2, $3, $4, 'concluida', NOW())
-      `,
-      [
-        usuario.rows[0].id,
-        usuario.rows[0].nome,
-        usuario.rows[0].email,
-        motivo?.trim() || null,
-      ],
-    );
-
-    await client.query("DELETE FROM usuarios WHERE id = $1", [req.usuario.id]);
-
-    await client.query("COMMIT");
-
     res.json({ mensagem: "Conta excluída com sucesso." });
   } catch (error) {
-    await client.query("ROLLBACK");
     console.error("Erro ao excluir conta:", error.message);
     res.status(500).json({ erro: "Erro ao excluir conta." });
-  } finally {
-    client.release();
   }
 });
 
@@ -1039,50 +790,23 @@ app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
       fotoUrl = arquivo.url;
     }
 
-    const atual = await pool.query("SELECT * FROM usuarios WHERE id = $1", [
-      req.usuario.id,
-    ]);
+    const usuario = await userService.updateProfile(req.usuario.id, {
+      nome,
+      bio,
+      foto: fotoUrl,
+      essencia_representa,
+      essencia_tema,
+      essencia_frase,
+      aberto_para,
+    });
 
-    if (atual.rows.length === 0) {
+    if (!usuario) {
       return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
-    const usuarioAtual = atual.rows[0];
-
-    const resultado = await pool.query(
-      `
-      UPDATE usuarios
-      SET 
-        nome = $1,
-        bio = $2,
-        foto = $3,
-        essencia_representa = $4,
-        essencia_tema = $5,
-        essencia_frase = $6,
-        aberto_para = $7
-      WHERE id = $8
-      RETURNING 
-        id, nome, email, foto, bio,
-        essencia_representa,
-        essencia_tema,
-        essencia_frase,
-        aberto_para
-      `,
-      [
-        nome || usuarioAtual.nome,
-        bio || usuarioAtual.bio,
-        fotoUrl || usuarioAtual.foto,
-        essencia_representa || usuarioAtual.essencia_representa,
-        essencia_tema || usuarioAtual.essencia_tema,
-        essencia_frase || usuarioAtual.essencia_frase,
-        aberto_para || usuarioAtual.aberto_para,
-        req.usuario.id,
-      ],
-    );
-
     res.json({
       mensagem: "Perfil atualizado com sucesso!",
-      usuario: resultado.rows[0],
+      usuario,
     });
   } catch (error) {
     console.error("❌ Erro ao editar perfil:", error.message);
@@ -1110,7 +834,6 @@ app.get("/posts", autenticar, async (req, res) => {
       SELECT 
         p.*,
         u.nome,
-        u.email,
         u.foto,
         COALESCE((SELECT COUNT(*) FROM curtidas WHERE post_id = p.id), 0) AS total_curtidas,
         COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios,
@@ -1191,7 +914,6 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
       SELECT 
         p.*,
         u.nome,
-        u.email,
         u.foto,
         0 AS total_curtidas,
         0 AS total_comentarios,
@@ -1744,36 +1466,14 @@ app.get("/mensagens/:usuarioId", autenticar, async (req, res) => {
 
 app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
   try {
-    const sugestoes = await pool.query(
-      `
-      SELECT 
-        u.id,
-        u.nome,
-        u.email,
-        u.foto,
-        u.bio,
-        u.ultimo_acesso,
-        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
-        EXISTS (
-          SELECT 1
-          FROM seguidores s
-          WHERE s.seguidor_id = $1
-          AND s.seguindo_id = u.id
-        ) AS seguindo
-      FROM usuarios u
-      WHERE u.id != $1
-      ORDER BY u.id DESC
-      `,
-      [req.usuario.id],
-    );
+    const sugestoes = await userService.listSuggestions(req.usuario.id);
 
-    res.json(sugestoes.rows);
+    res.json(sugestoes);
   } catch (error) {
     console.error("❌ Erro ao buscar sugestões:", error.message);
 
     res.status(500).json({
       erro: "Erro ao buscar sugestões.",
-      detalhe: error.message,
     });
   }
 });
@@ -1784,32 +1484,9 @@ app.get("/usuarios/sugestoes", autenticar, async (req, res) => {
 
 app.get("/usuarios/online", autenticar, async (req, res) => {
   try {
-    const online = await pool.query(
-      `
-      SELECT
-        u.id,
-        u.nome,
-        u.email,
-        u.foto,
-        u.bio,
-        u.ultimo_acesso,
-        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
-        EXISTS (
-          SELECT 1
-          FROM seguidores s
-          WHERE s.seguidor_id = $1
-          AND s.seguindo_id = u.id
-        ) AS seguindo
-      FROM usuarios u
-      WHERE u.id != $1
-      AND u.ultimo_acesso > NOW() - INTERVAL '5 minutes'
-      ORDER BY u.ultimo_acesso DESC
-      LIMIT 8
-      `,
-      [req.usuario.id],
-    );
+    const online = await userService.listOnlineUsers(req.usuario.id);
 
-    res.json(online.rows);
+    res.json(online);
   } catch (error) {
     console.error("❌ Erro ao buscar usuários online:", error.message);
     res.status(500).json({ erro: "Erro ao buscar usuários online." });
@@ -1820,32 +1497,9 @@ app.get("/usuarios/online", autenticar, async (req, res) => {
 
 app.get("/usuarios/seguidores", autenticar, async (req, res) => {
   try {
-    const seguidores = await pool.query(
-      `
-      SELECT
-        u.id,
-        u.nome,
-        u.email,
-        u.foto,
-        u.bio,
-        u.ultimo_acesso,
-        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
-        EXISTS (
-          SELECT 1
-          FROM seguidores rel
-          WHERE rel.seguidor_id = $1
-          AND rel.seguindo_id = u.id
-        ) AS seguindo
-      FROM seguidores s
-      JOIN usuarios u ON u.id = s.seguidor_id
-      WHERE s.seguindo_id = $1
-      ORDER BY s.criado_em DESC
-      LIMIT 12
-      `,
-      [req.usuario.id],
-    );
+    const seguidores = await userService.listFollowers(req.usuario.id);
 
-    res.json(seguidores.rows);
+    res.json(seguidores);
   } catch (error) {
     console.error("❌ Erro ao buscar seguidores:", error.message);
     res.status(500).json({ erro: "Erro ao buscar seguidores." });
@@ -1854,27 +1508,9 @@ app.get("/usuarios/seguidores", autenticar, async (req, res) => {
 
 app.get("/usuarios/seguindo", autenticar, async (req, res) => {
   try {
-    const seguindo = await pool.query(
-      `
-      SELECT
-        u.id,
-        u.nome,
-        u.email,
-        u.foto,
-        u.bio,
-        u.ultimo_acesso,
-        (u.ultimo_acesso > NOW() - INTERVAL '5 minutes') AS online,
-        true AS seguindo
-      FROM seguidores s
-      JOIN usuarios u ON u.id = s.seguindo_id
-      WHERE s.seguidor_id = $1
-      ORDER BY s.criado_em DESC
-      LIMIT 12
-      `,
-      [req.usuario.id],
-    );
+    const seguindo = await userService.listFollowing(req.usuario.id);
 
-    res.json(seguindo.rows);
+    res.json(seguindo);
   } catch (error) {
     console.error("❌ Erro ao buscar seguindo:", error.message);
     res.status(500).json({ erro: "Erro ao buscar seguindo." });
@@ -1885,25 +1521,13 @@ app.get("/usuarios/:id", autenticar, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const usuario = await pool.query(
-      `
-      SELECT 
-        id, nome, email, foto, bio, criado_em,
-        essencia_representa,
-        essencia_tema,
-        essencia_frase,
-        aberto_para
-      FROM usuarios
-      WHERE id = $1
-      `,
-      [id],
-    );
+    const usuario = await userService.findPublicProfile(Number(id));
 
-    if (usuario.rows.length === 0) {
+    if (!usuario) {
       return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
-    res.json(usuario.rows[0]);
+    res.json(usuario);
   } catch {
     res.status(500).json({ erro: "Erro ao buscar usuário." });
   }
@@ -1947,7 +1571,6 @@ app.get("/usuarios/:id/posts", autenticar, async (req, res) => {
       SELECT
         p.*,
         u.nome,
-        u.email,
         u.foto,
         COALESCE((SELECT COUNT(*) FROM curtidas WHERE post_id = p.id), 0) AS total_curtidas,
         COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios,
@@ -2276,7 +1899,7 @@ app.get("/api/grupos/:id/solicitacoes", autenticar, async (req, res) => {
 
     const solicitacoes = await pool.query(
       `
-      SELECT gs.*, u.nome, u.email, u.foto
+      SELECT gs.*, u.nome, u.foto
       FROM grupo_solicitacoes gs
       JOIN usuarios u ON u.id = gs.usuario_id
       WHERE gs.grupo_id = $1 AND gs.status = 'pendente'

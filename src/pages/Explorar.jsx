@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import { useNotification } from "../context/notificationStore";
 import "../styles/style.css";
 
@@ -24,7 +25,7 @@ export default function Explorar() {
 
   async function seguirUsuario(id) {
     try {
-      const res = await api.post(`/seguir/${id}`);
+      const res = await api.post(`/users/${id}/follow`);
 
       setUsuarios((prev) =>
         prev.map((user) =>
@@ -71,14 +72,14 @@ export default function Explorar() {
               <article className="explorar-card" key={user.id}>
                 <div className="explorar-avatar">
                   {user.foto ? (
-                    <img src={user.foto} alt={user.nome} />
+                    <img src={resolverUrlMidia(user.foto)} alt={user.nome} />
                   ) : (
                     <span>{user.nome?.charAt(0) || "?"}</span>
                   )}
                 </div>
 
                 <h3>{user.nome}</h3>
-                <p>@{user.email}</p>
+                <p>Membro PostFan</p>
 
                 <small>
                   {user.bio || "Este usuário ainda não adicionou uma bio."}

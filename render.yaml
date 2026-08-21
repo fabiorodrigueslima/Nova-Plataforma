@@ -13,7 +13,7 @@ services:
         fromDatabase:
           name: postfan-db
           property: connectionString
-      - key: JWT_SECRET
+      - key: SESSION_SECRET
         generateValue: true
       - key: GOOGLE_CLIENT_ID
         value: 1014036348694-5l3nn8l04q8legmtar6c0pbde44sse39.apps.googleusercontent.com

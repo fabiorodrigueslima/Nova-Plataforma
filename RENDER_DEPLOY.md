@@ -52,7 +52,7 @@ CLOUDINARY_API_SECRET=seu-api-secret
 
 O `DATABASE_URL` vem automaticamente do banco `postfan-db`.
 
-O `JWT_SECRET` e gerado automaticamente pelo Render porque esta com `generateValue: true`.
+O `SESSION_SECRET` e gerado automaticamente pelo Render porque esta com `generateValue: true`.
 
 ## 4. Google OAuth
 

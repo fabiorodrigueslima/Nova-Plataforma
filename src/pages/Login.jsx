@@ -48,7 +48,7 @@ export default function Login() {
                 return;
             }
 
-            salvarSessao(data.token, data.usuario);
+            salvarSessao(data.usuario, data.csrfToken);
             navigate("/feed");
         } catch (error) {
             if (!error.response || error.response.status >= 500) {
@@ -67,7 +67,7 @@ export default function Login() {
         try {
             setLoading(true);
             const data = await loginComGoogle(credentialResponse.credential);
-            salvarSessao(data.token, data.usuario);
+            salvarSessao(data.usuario, data.csrfToken);
             navigate("/feed");
         } catch (error) {
             setErro(error.response?.data?.erro || "Não foi possível entrar com Google.");

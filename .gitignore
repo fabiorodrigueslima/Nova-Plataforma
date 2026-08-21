@@ -25,6 +25,7 @@ dist-ssr
 
 .vercel
 .env
+backend/.env.test
 .env-exemple
 .env-example
 .env*.local

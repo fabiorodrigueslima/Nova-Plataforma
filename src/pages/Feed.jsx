@@ -16,6 +16,7 @@ import {
     FiX,
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 import Sidebar from "../components/Sidebar";
 import FeedCenter from "../components/FeedCenter";
@@ -25,6 +26,7 @@ import "../styles/style.css";
 
 export default function Feed() {
     const navigate = useNavigate();
+    const { sair: encerrarSessao } = useAuth();
     const [temaAtivo, setTemaAtivo] = useState("Todos");
     const [menuMobileAberto, setMenuMobileAberto] = useState(false);
     const [pedidoAbrirPostfan, setPedidoAbrirPostfan] = useState(0);
@@ -39,9 +41,8 @@ export default function Feed() {
         navigate(rota);
     }
 
-    function sair() {
-        localStorage.removeItem("usuario");
-        localStorage.removeItem("token");
+    async function sair() {
+        await encerrarSessao();
         setMenuMobileAberto(false);
         navigate("/login");
     }

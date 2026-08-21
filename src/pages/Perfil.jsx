@@ -9,8 +9,10 @@ import {
     FiX,
 } from "react-icons/fi";
 import api from "../services/api";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import { analisarConteudo } from "../utils/moderacao";
 import { useNotification } from "../context/notificationStore";
+import { useAuth } from "../context/AuthContext";
 import "../styles/style.css";
 
 export default function Perfil() {
@@ -18,14 +20,15 @@ export default function Perfil() {
     const navigate = useNavigate();
     const dialog = useNotification();
 
-    const usuarioLogado = JSON.parse(localStorage.getItem("usuario") || "null");
-    const token = localStorage.getItem("token");
+    const { usuario: usuarioLogado } = useAuth();
+    const token = Boolean(usuarioLogado);
 
     const perfilId = id || usuarioLogado?.id;
     const meuPerfil = Number(perfilId) === Number(usuarioLogado?.id);
 
     const [perfil, setPerfil] = useState(null);
     const [posts, setPosts] = useState([]);
+    const [nextPostsCursor, setNextPostsCursor] = useState(null);
     const [stats, setStats] = useState({
         total_posts: 0,
         total_seguidores: 0,
@@ -148,13 +151,25 @@ export default function Perfil() {
 
             setPerfil(resUsuario.data);
             setStats(resStats.data);
-            setPosts(Array.isArray(resPosts.data) ? resPosts.data : []);
+            setPosts(Array.isArray(resPosts.data.items) ? resPosts.data.items : []);
+            setNextPostsCursor(resPosts.data.nextCursor || null);
         } catch (error) {
             console.error("Erro ao carregar perfil:", error);
             setPerfil(null);
         } finally {
             setLoading(false);
         }
+    }
+
+    async function carregarMaisPostsPerfil() {
+        if (!nextPostsCursor) return;
+        const res = await api.get(`/usuarios/${perfilId}/posts`, { params: { cursor: nextPostsCursor } });
+        const novos = Array.isArray(res.data.items) ? res.data.items : [];
+        setPosts((atuais) => {
+            const ids = new Set(atuais.map((post) => post.id));
+            return [...atuais, ...novos.filter((post) => !ids.has(post.id))];
+        });
+        setNextPostsCursor(res.data.nextCursor || null);
     }
 
     function validarTexto(texto, mensagemPadrao) {
@@ -183,7 +198,7 @@ export default function Perfil() {
 
     async function seguirUsuario() {
         try {
-            const res = await api.post(`/seguir/${perfilId}`);
+            const res = await api.post(`/users/${perfilId}/follow`);
             const data = res.data;
 
             setStats((prev) => ({
@@ -205,7 +220,7 @@ export default function Perfil() {
 
     async function curtirPost(idPost) {
         try {
-            const res = await api.post("/curtir", { post_id: idPost });
+            const res = await api.post(`/posts/${idPost}/like`);
             const data = res.data;
 
             setPosts((prev) =>
@@ -464,7 +479,7 @@ export default function Perfil() {
 
     async function compartilhar(post) {
         try {
-            await api.post("/compartilhar", { post_id: post.id });
+            await api.post(`/posts/${post.id}/share`);
         } catch (error) {
             console.error("Erro ao registrar compartilhamento:", error);
         }
@@ -611,7 +626,7 @@ export default function Perfil() {
                 <div className="perfil-header-pro">
                     <div className="perfil-avatar-pro">
                         {perfil.foto ? (
-                            <img src={perfil.foto} alt={perfil.nome} />
+                            <img src={resolverUrlMidia(perfil.foto)} alt={perfil.nome} />
                         ) : (
                             <span>{perfil.nome?.charAt(0)}</span>
                         )}
@@ -627,7 +642,7 @@ export default function Perfil() {
                                     <span className="perfil-badge">✓</span>
                                 </h1>
 
-                                <p className="perfil-email-pro">@{perfil.email}</p>
+                                <p className="perfil-email-pro">Membro PostFan</p>
                             </div>
 
                             <div className="perfil-actions-pro">
@@ -846,6 +861,7 @@ export default function Perfil() {
                                     })}
                                 </div>
                             )}
+                            {nextPostsCursor && <button type="button" onClick={carregarMaisPostsPerfil}>Carregar mais</button>}
                         </>
                     )}
 

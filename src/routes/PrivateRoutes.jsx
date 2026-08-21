@@ -3,7 +3,9 @@ import { useAuth } from "../context/AuthContext";
 
 export default function PrivateRoutes() {
   const location = useLocation();
-  const { autenticado } = useAuth();
+  const { autenticado, carregando } = useAuth();
+
+  if (carregando) return null;
 
   if (!autenticado) {
     return <Navigate to="/login" replace state={{ from: location }} />;

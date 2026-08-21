@@ -4,13 +4,16 @@ const api = axios.create({
   baseURL:
     import.meta.env.VITE_API_URL ||
     (import.meta.env.PROD ? "" : "http://localhost:5000"),
+  withCredentials: true,
 });
 
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+let csrfToken = null;
+export function setCsrfToken(value) { csrfToken = value || null; }
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+api.interceptors.request.use((config) => {
+  const method = String(config.method || "get").toUpperCase();
+  if (csrfToken && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+    config.headers["X-CSRF-Token"] = csrfToken;
   }
 
   return config;
@@ -19,10 +22,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("usuario");
-
+    if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
       if (!window.location.pathname.startsWith("/login")) {
         window.location.assign("/login");
       }

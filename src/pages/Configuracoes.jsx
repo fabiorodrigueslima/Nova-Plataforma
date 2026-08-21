@@ -1,15 +1,16 @@
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { useNotification } from "../context/notificationStore";
+import { useAuth } from "../context/AuthContext";
 import "../styles/style.css";
 
 export default function Configuracoes() {
   const navigate = useNavigate();
   const dialog = useNotification();
+  const { sair: encerrarSessao } = useAuth();
 
-  function sair() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("usuario");
+  async function sair() {
+    await encerrarSessao();
     navigate("/login");
   }
 
@@ -39,9 +40,6 @@ export default function Configuracoes() {
 
     try {
       await api.delete("/conta", { data: { motivo } });
-
-      localStorage.removeItem("token");
-      localStorage.removeItem("usuario");
 
       await dialog.notify({
         type: "success",

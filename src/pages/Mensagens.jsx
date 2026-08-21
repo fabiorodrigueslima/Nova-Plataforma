@@ -3,20 +3,14 @@ import { FiArrowLeft, FiMessageCircle, FiSend } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { analisarConteudo } from "../utils/moderacao";
+import { useAuth } from "../context/AuthContext";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import "../styles/style.css";
-
-function obterUsuarioLogado() {
-    try {
-        return JSON.parse(localStorage.getItem("usuario") || "{}") || {};
-    } catch {
-        return {};
-    }
-}
 
 export default function Mensagens() {
     const navigate = useNavigate();
     const fimRef = useRef(null);
-    const usuario = obterUsuarioLogado();
+    const { usuario } = useAuth();
     const [conversas, setConversas] = useState([]);
     const [contato, setContato] = useState(null);
     const [mensagens, setMensagens] = useState([]);
@@ -120,7 +114,7 @@ export default function Mensagens() {
                                     onClick={() => abrirConversa(pessoa)}
                                 >
                                     <span className="direct-avatar">
-                                        {pessoa.foto ? <img src={pessoa.foto} alt="" /> : pessoa.nome?.charAt(0)}
+                                        {pessoa.foto ? <img src={resolverUrlMidia(pessoa.foto)} alt="" /> : pessoa.nome?.charAt(0)}
                                     </span>
                                     <span className="direct-contact-copy">
                                         <strong>{pessoa.nome}</strong>
@@ -149,7 +143,7 @@ export default function Mensagens() {
                                     <FiArrowLeft />
                                 </button>
                                 <span className="direct-avatar">
-                                    {contato.foto ? <img src={contato.foto} alt="" /> : contato.nome?.charAt(0)}
+                                    {contato.foto ? <img src={resolverUrlMidia(contato.foto)} alt="" /> : contato.nome?.charAt(0)}
                                 </span>
                                 <div>
                                     <strong>{contato.nome}</strong>

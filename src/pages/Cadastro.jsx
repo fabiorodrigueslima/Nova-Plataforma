@@ -82,7 +82,7 @@ export default function Cadastro() {
       }
 
       const data = await cadastrarComEmail(formData);
-      salvarSessao(data.token, data.usuario);
+      salvarSessao(data.usuario, data.csrfToken);
       navigate("/feed");
     } catch (error) {
       setErro(error.response?.data?.erro || "Erro ao criar conta.");
@@ -102,7 +102,7 @@ export default function Cadastro() {
     try {
       setLoading(true);
       const data = await loginComGoogle(credentialResponse.credential);
-      salvarSessao(data.token, data.usuario);
+      salvarSessao(data.usuario, data.csrfToken);
       navigate("/feed");
     } catch (error) {
       setErro(error.response?.data?.erro || "Não foi possível cadastrar com Google.");

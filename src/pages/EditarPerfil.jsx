@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import "../styles/style.css";
 import api from "../services/api";
 import { useNotification } from "../context/notificationStore";
+import { useAuth } from "../context/AuthContext";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 
 export default function EditarPerfil() {
     const navigate = useNavigate();
     const dialog = useNotification();
 
-    const usuarioLocal = JSON.parse(localStorage.getItem("usuario"));
+    const { usuario: usuarioLocal, salvarSessao } = useAuth();
 
     const [modalSucesso, setModalSucesso] = useState(false);
     const [mensagemSucesso, setMensagemSucesso] = useState("");
@@ -30,7 +32,7 @@ export default function EditarPerfil() {
     async function carregarDados() {
         try {
             const res = await api.get("/me");
-            const data = res.data;
+            const data = res.data.usuario;
 
             setForm({
                 nome: data.nome || "",
@@ -41,7 +43,7 @@ export default function EditarPerfil() {
                 aberto_para: data.aberto_para || "",
             });
 
-            setPreview(data.foto || "");
+            setPreview(resolverUrlMidia(data.foto));
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
             dialog.notify({
@@ -100,7 +102,7 @@ export default function EditarPerfil() {
             const res = await api.put("/perfil", formData);
             const data = res.data;
 
-            localStorage.setItem("usuario", JSON.stringify(data.usuario));
+            salvarSessao(data.usuario);
 
             setMensagemSucesso(
                 "Seu perfil foi atualizado com sucesso. Agora suas informações já aparecem no PostFan."

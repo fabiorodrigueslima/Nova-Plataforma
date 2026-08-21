@@ -17,6 +17,8 @@ import { useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { analisarConteudo } from "../utils/moderacao";
 import { useNotification } from "../context/notificationStore";
+import { useAuth } from "../context/AuthContext";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import "../styles/style.css";
 
 function Avatar({ className = "post-avatar", foto, nome, onClick }) {
@@ -31,7 +33,7 @@ function Avatar({ className = "post-avatar", foto, nome, onClick }) {
             aria-label={onClick ? `Abrir perfil de ${nome || "usuário"}` : undefined}
         >
             {foto && !erroImagem ? (
-                <img src={foto} alt={nome || "Usuário"} onError={() => setErroImagem(true)} />
+                <img src={resolverUrlMidia(foto)} alt={nome || "Usuário"} onError={() => setErroImagem(true)} />
             ) : (
                 <span>{inicial}</span>
             )}
@@ -39,35 +41,10 @@ function Avatar({ className = "post-avatar", foto, nome, onClick }) {
     );
 }
 
-/*
- * Converte endereços locais de uploads para o endereço usado pelo aparelho.
- * Isso evita que fotos salvas como "localhost" funcionem no computador,
- * mas desapareçam quando o feed é aberto por um celular na mesma rede.
- */
-function resolverUrlMidia(url) {
-    if (!url) return "";
-
-    const apiBase = api.defaults.baseURL || window.location.origin;
-
-    try {
-        const endereco = new URL(url, apiBase);
-        const origemLocal = ["localhost", "127.0.0.1"].includes(endereco.hostname);
-        const acessoExterno = !["localhost", "127.0.0.1"].includes(window.location.hostname);
-
-        if (origemLocal && acessoExterno) {
-            endereco.hostname = window.location.hostname;
-        }
-
-        return endereco.toString();
-    } catch {
-        return url;
-    }
-}
-
 export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }) {
     const navigate = useNavigate();
     const dialog = useNotification();
-    const usuario = JSON.parse(localStorage.getItem("usuario") || "{}");
+    const { usuario } = useAuth();
 
     const [texto, setTexto] = useState("");
     const [tema, setTema] = useState("Geral");
@@ -81,6 +58,8 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
     const [editandoId, setEditandoId] = useState(null);
     const [textoEditado, setTextoEditado] = useState("");
     const [loadingPosts, setLoadingPosts] = useState(true);
+    const [nextCursor, setNextCursor] = useState(null);
+    const [carregandoMais, setCarregandoMais] = useState(false);
     const [publicando, setPublicando] = useState(false);
     const [avisoModeracao, setAvisoModeracao] = useState("");
     const [avisoPublicacao, setAvisoPublicacao] = useState("");
@@ -89,12 +68,27 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
         try {
             setLoadingPosts(true);
             const res = await api.get("/posts");
-            setPosts(Array.isArray(res.data) ? res.data : []);
+            setPosts(Array.isArray(res.data.items) ? res.data.items : []);
+            setNextCursor(res.data.nextCursor || null);
         } catch (error) {
             console.error("Erro ao carregar posts:", error);
         } finally {
             setLoadingPosts(false);
         }
+    }
+
+    async function carregarMaisPosts() {
+        if (!nextCursor || carregandoMais) return;
+        try {
+            setCarregandoMais(true);
+            const res = await api.get("/posts", { params: { cursor: nextCursor } });
+            const novos = Array.isArray(res.data.items) ? res.data.items : [];
+            setPosts((atuais) => {
+                const ids = new Set(atuais.map((post) => post.id));
+                return [...atuais, ...novos.filter((post) => !ids.has(post.id))];
+            });
+            setNextCursor(res.data.nextCursor || null);
+        } finally { setCarregandoMais(false); }
     }
 
     useEffect(() => {
@@ -182,7 +176,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
 
     async function curtirPost(id) {
         try {
-            const res = await api.post("/curtir", { post_id: id });
+            const res = await api.post(`/posts/${id}/like`);
             const data = res.data;
 
             setPosts((prev) =>
@@ -327,7 +321,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
 
     async function compartilhar(post) {
         try {
-            await api.post("/compartilhar", { post_id: post.id });
+            await api.post(`/posts/${post.id}/share`);
         } catch (error) {
             console.error("Erro ao registrar compartilhamento:", error);
         }
@@ -590,6 +584,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
                             </article>
                         );
                     })
+                )}
+                {!loadingPosts && nextCursor && (
+                    <button type="button" className="publish-btn" onClick={carregarMaisPosts} disabled={carregandoMais}>
+                        {carregandoMais ? "Carregando..." : "Carregar mais"}
+                    </button>
                 )}
             </div>
         </section>

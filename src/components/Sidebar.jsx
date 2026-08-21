@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "../styles/style.css";
+import { useAuth } from "../context/AuthContext";
 
 export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo, pedidoAbrirPostfan = 0 }) {
     const navigate = useNavigate();
+    const { sair: encerrarSessao } = useAuth();
 
     const [mostrarConta, setMostrarConta] = useState(false);
     const [mostrarPostfan, setMostrarPostfan] = useState(false);
@@ -67,9 +69,8 @@ export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo, pedidoAbrir
         }
     }
 
-    function sair() {
-        localStorage.removeItem("usuario");
-        localStorage.removeItem("token");
+    async function sair() {
+        await encerrarSessao();
         navigate("/login");
     }
 
@@ -140,6 +141,10 @@ export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo, pedidoAbrir
                             <button onClick={() => navigate("/ajuda")}>❓ Ajuda</button>
                         </div>
                     )}
+
+                    <button className="sidebar-account" onClick={() => navigate("/notificacoes")}>
+                        🔔 Notificações
+                    </button>
 
                     <div
                         className="sidebar-about"

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import { useNotification } from "../context/notificationStore";
 import "../styles/style.css";
 
@@ -25,7 +26,7 @@ export default function Sugestoes() {
 
     async function seguirUsuario(id) {
         try {
-            const res = await api.post(`/seguir/${id}`);
+            const res = await api.post(`/users/${id}/follow`);
 
             const data = res.data;
 
@@ -83,14 +84,14 @@ export default function Sugestoes() {
                             <article className="sugestao-card" key={user.id}>
                                 <div className="sugestao-avatar">
                                     {user.foto ? (
-                                        <img src={user.foto} alt={user.nome} />
+                                        <img src={resolverUrlMidia(user.foto)} alt={user.nome} />
                                     ) : (
                                         <span>{user.nome?.charAt(0)}</span>
                                     )}
                                 </div>
 
                                 <h3>{user.nome}</h3>
-                                <p>@{user.email}</p>
+                                <p>Membro PostFan</p>
 
                                 <small>
                                     {user.bio ||

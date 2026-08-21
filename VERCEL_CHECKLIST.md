@@ -32,7 +32,7 @@ Crie `.env` na raiz do projeto `/backend`:
 
 ```env
 DATABASE_URL=postgresql://user:password@host:port/database
-JWT_SECRET=uma_chave_super_secreta_aleatorios
+SESSION_SECRET=uma_chave_super_secreta_aleatoria_com_32_caracteres
 FRONTEND_URL=https://seu-front-vercel.vercel.app
 BACKEND_URL=https://seu-back-vercel.vercel.app
 EMAIL_USER=seu-email@gmail.com
@@ -184,7 +184,7 @@ Backend (`package.json`):
 - express
 - pg (PostgreSQL)
 - bcrypt (senhas)
-- jsonwebtoken (JWT)
+- sessoes opacas com cookie HttpOnly
 - multer (uploads local - TROCAR por Cloudinary!)
 - nodemailer (email)
 - cors

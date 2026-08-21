@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { FiRadio, FiUserCheck, FiUserPlus, FiUsers } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import api from "../services/api";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import { useNotification } from "../context/notificationStore";
+import { useAuth } from "../context/AuthContext";
 import "../styles/style.css";
 
 function Avatar({ className, foto, nome, onClick, online = false }) {
@@ -17,7 +19,7 @@ function Avatar({ className, foto, nome, onClick, online = false }) {
       aria-label={onClick ? `Abrir perfil de ${nome || "usuário"}` : undefined}
     >
       {foto && !erroImagem ? (
-        <img src={foto} alt={nome || "Usuário"} onError={() => setErroImagem(true)} />
+        <img src={resolverUrlMidia(foto)} alt={nome || "Usuário"} onError={() => setErroImagem(true)} />
       ) : (
         <span>{inicial}</span>
       )}
@@ -30,9 +32,9 @@ function Avatar({ className, foto, nome, onClick, online = false }) {
 export default function RightPanel({ posts = [] }) {
   const navigate = useNavigate();
   const dialog = useNotification();
-  const token = localStorage.getItem("token");
-
-  const [usuario, setUsuario] = useState(() => JSON.parse(localStorage.getItem("usuario") || "{}"));
+  const { usuario: usuarioAutenticado } = useAuth();
+  const token = Boolean(usuarioAutenticado);
+  const [usuario, setUsuario] = useState(usuarioAutenticado || {});
   const [usuariosReais, setUsuariosReais] = useState([]);
   const [usuariosOnline, setUsuariosOnline] = useState([]);
   const [seguidores, setSeguidores] = useState([]);
@@ -49,8 +51,7 @@ export default function RightPanel({ posts = [] }) {
       if (!token) return;
 
       const res = await api.get("/me");
-      setUsuario(res.data);
-      localStorage.setItem("usuario", JSON.stringify(res.data));
+      setUsuario(res.data.usuario);
     } catch (error) {
       console.error("Erro ao buscar usuário logado:", error);
     }
@@ -126,7 +127,7 @@ export default function RightPanel({ posts = [] }) {
 
   async function seguirUsuario(id) {
     try {
-      const res = await api.post(`/seguir/${id}`);
+      const res = await api.post(`/users/${id}/follow`);
       atualizarUsuarioEmListas(id, res.data.seguindo);
       await Promise.all([carregarStats(usuario?.id), carregarRede(), carregarSugestoes(), carregarOnline()]);
     } catch (error) {
@@ -184,7 +185,7 @@ export default function RightPanel({ posts = [] }) {
 
         <div className="suggestion-info">
           <strong>{user.nome}</strong>
-          <span>{user.online ? "Online agora" : `@${user.email}`}</span>
+          <span>{user.online ? "Online agora" : "Membro PostFan"}</span>
         </div>
 
         <button

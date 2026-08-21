@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import api from "../services/api";
 import { analisarConteudo } from "../utils/moderacao";
 import { useNotification } from "../context/notificationStore";
+import { useAuth } from "../context/AuthContext";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import "../styles/style.css";
 
 export default function GrupoChat() {
@@ -10,7 +12,7 @@ export default function GrupoChat() {
     const navigate = useNavigate();
     const dialog = useNotification();
 
-    const usuario = JSON.parse(localStorage.getItem("usuario") || "{}");
+    const { usuario } = useAuth();
 
     const [grupo, setGrupo] = useState(null);
     const [mensagens, setMensagens] = useState([]);
@@ -184,7 +186,7 @@ export default function GrupoChat() {
                                     <div className="chat-avatar">
                                         {msg.foto ? (
                                             <img
-                                                src={msg.foto}
+                                                src={resolverUrlMidia(msg.foto)}
                                                 alt={msg.nome}
                                             />
                                         ) : (

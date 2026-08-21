@@ -18,6 +18,12 @@ export default defineConfig([
     },
   },
   {
+    files: ['backend/tests/**/*.js'],
+    languageOptions: {
+      globals: globals.vitest,
+    },
+  },
+  {
     files: ['src/**/*.{js,jsx}', '*.js'],
     extends: [
       js.configs.recommended,

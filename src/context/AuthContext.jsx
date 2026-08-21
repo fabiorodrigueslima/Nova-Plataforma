@@ -1,62 +1,46 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import api, { setCsrfToken } from "../services/api";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [usuario, setUsuario] = useState(() => {
-    const usuarioSalvo = localStorage.getItem("usuario");
+  const [usuario, setUsuario] = useState(null);
+  const [carregando, setCarregando] = useState(true);
 
-    try {
-      return usuarioSalvo ? JSON.parse(usuarioSalvo) : null;
-    } catch {
-      localStorage.removeItem("usuario");
-      return null;
-    }
-  });
-
-  const [token, setToken] = useState(() => localStorage.getItem("token"));
-
-  function salvarSessao(novoToken, novoUsuario) {
-    if (novoToken) {
-      localStorage.setItem("token", novoToken);
-    }
-
-    if (novoUsuario) {
-      localStorage.setItem("usuario", JSON.stringify(novoUsuario));
-    }
-
-    setToken(novoToken || null);
-    setUsuario(novoUsuario || null);
-  }
-
-  function sair() {
+  useEffect(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("usuario");
-    setToken(null);
+    api.get("/me", { skipAuthRedirect: true })
+      .then(({ data }) => {
+        setUsuario(data.usuario);
+        setCsrfToken(data.csrfToken);
+      })
+      .catch(() => setUsuario(null))
+      .finally(() => setCarregando(false));
+  }, []);
+
+  function salvarSessao(novoUsuario, novoCsrfToken) {
+    setUsuario(novoUsuario || null);
+    if (novoCsrfToken !== undefined) setCsrfToken(novoCsrfToken);
+    setCarregando(false);
+  }
+
+  async function sair() {
+    try { await api.post("/logout"); } catch { /* sessão já inválida */ }
+    setCsrfToken(null);
     setUsuario(null);
   }
 
-  const value = useMemo(
-    () => ({
-      autenticado: Boolean(token),
-      salvarSessao,
-      sair,
-      token,
-      usuario,
-    }),
-    [token, usuario],
-  );
+  const value = useMemo(() => ({
+    autenticado: Boolean(usuario), carregando, salvarSessao, sair, usuario,
+  }), [carregando, usuario]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error("useAuth deve ser usado dentro de AuthProvider.");
-  }
-
+  if (!context) throw new Error("useAuth deve ser usado dentro de AuthProvider.");
   return context;
 }

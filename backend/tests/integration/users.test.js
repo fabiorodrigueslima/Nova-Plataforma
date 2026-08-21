@@ -81,6 +81,34 @@ describe("API de usuarios migrada para Prisma", () => {
     expectNoPrivateUserFields(response.body, { allowEmail: true });
   });
 
+  it("permite limpar campos opcionais e rejeita nome vazio", async () => {
+    const user = await createTestUser({ bio: "Bio anterior" });
+    const headers = await authHeader(user);
+    const cleared = await request(app)
+      .put("/perfil")
+      .set(headers)
+      .field("nome", user.nome)
+      .field("bio", "")
+      .expect(200);
+    expect(cleared.body.usuario.bio).toBeNull();
+
+    await request(app)
+      .put("/perfil")
+      .set(headers)
+      .field("nome", "   ")
+      .expect(400);
+  });
+
+  it("aceita somente imagens como foto de perfil", async () => {
+    const user = await createTestUser();
+    await request(app)
+      .put("/perfil")
+      .set(await authHeader(user))
+      .field("nome", user.nome)
+      .attach("foto", Buffer.from("%PDF-1.4"), { filename: "perfil.pdf", contentType: "application/pdf" })
+      .expect(400);
+  });
+
   it("exclui conta e registra auditoria na mesma transacao", async () => {
     const user = await createTestUser();
     await request(app)

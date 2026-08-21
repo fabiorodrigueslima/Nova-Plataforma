@@ -61,6 +61,47 @@ async function createComment(usuarioId, postId, conteudo) {
   return { id: comment.id, usuario_id: comment.usuarioId, post_id: comment.postId, conteudo: comment.conteudo, criado_em: comment.criadoEm, nome: comment.usuario.nome, foto: comment.usuario.foto };
 }
 
+function presentComment(comment) {
+  return {
+    id: comment.id,
+    usuario_id: comment.usuarioId,
+    post_id: comment.postId,
+    conteudo: comment.conteudo || comment.texto,
+    criado_em: comment.criadoEm,
+    nome: comment.usuario?.nome,
+    foto: comment.usuario?.foto,
+  };
+}
+
+async function listComments(postId) {
+  const rows = await prisma.comentario.findMany({
+    where: { postId },
+    orderBy: [{ criadoEm: "asc" }, { id: "asc" }],
+    take: 200,
+    select: { id: true, usuarioId: true, postId: true, conteudo: true, texto: true, criadoEm: true, usuario: { select: { nome: true, foto: true } } },
+  });
+  return rows.map(presentComment);
+}
+
+async function updateComment(id, usuarioId, conteudo) {
+  const current = await prisma.comentario.findUnique({ where: { id }, select: { usuarioId: true } });
+  if (!current) return { status: "not_found" };
+  if (current.usuarioId !== usuarioId) return { status: "forbidden" };
+  const comment = await prisma.comentario.update({
+    where: { id }, data: { conteudo, texto: conteudo },
+    select: { id: true, usuarioId: true, postId: true, conteudo: true, texto: true, criadoEm: true, usuario: { select: { nome: true, foto: true } } },
+  });
+  return { status: "ok", comment: presentComment(comment) };
+}
+
+async function deleteComment(id, usuarioId) {
+  const current = await prisma.comentario.findUnique({ where: { id }, select: { usuarioId: true, postId: true } });
+  if (!current) return { status: "not_found" };
+  if (current.usuarioId !== usuarioId) return { status: "forbidden" };
+  await prisma.comentario.delete({ where: { id } });
+  return { status: "ok", postId: current.postId };
+}
+
 async function listNotifications(destinatarioId, limit = 30) {
   const take = Math.min(Math.max(Number.parseInt(limit, 10) || 30, 1), 50);
   const [items, unread] = await prisma.$transaction([
@@ -70,4 +111,4 @@ async function listNotifications(destinatarioId, limit = 30) {
   return { items, unread };
 }
 
-module.exports = { createComment, listNotifications, parsePositiveId, share, toggleFollow, toggleLike };
+module.exports = { createComment, deleteComment, listComments, listNotifications, parsePositiveId, share, toggleFollow, toggleLike, updateComment };

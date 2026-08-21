@@ -51,17 +51,25 @@ async function updateProfile(id, input) {
   });
   if (!current) return null;
 
+  const optionalText = (field, currentValue) =>
+    Object.prototype.hasOwnProperty.call(input, field)
+      ? String(input[field] ?? "").trim() || null
+      : currentValue;
+  const nome = Object.prototype.hasOwnProperty.call(input, "nome")
+    ? String(input.nome ?? "").trim()
+    : current.nome;
+  if (!nome) return { status: "invalid_name" };
+
   const user = await prisma.usuario.update({
     where: { id },
     data: {
-      nome: input.nome || current.nome,
-      bio: input.bio || current.bio,
-      foto: input.foto || current.foto,
-      essenciaRepresenta:
-        input.essencia_representa || current.essenciaRepresenta,
-      essenciaTema: input.essencia_tema || current.essenciaTema,
-      essenciaFrase: input.essencia_frase || current.essenciaFrase,
-      abertoPara: input.aberto_para || current.abertoPara,
+      nome: nome.slice(0, 150),
+      bio: optionalText("bio", current.bio)?.slice(0, 220) ?? null,
+      foto: input.foto ?? current.foto,
+      essenciaRepresenta: optionalText("essencia_representa", current.essenciaRepresenta),
+      essenciaTema: optionalText("essencia_tema", current.essenciaTema),
+      essenciaFrase: optionalText("essencia_frase", current.essenciaFrase),
+      abertoPara: optionalText("aberto_para", current.abertoPara),
     },
     select: privateUserSelect,
   });

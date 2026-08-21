@@ -142,6 +142,17 @@ app.options(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === "test" ? 100 : 12,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ erro: "Muitas tentativas. Aguarde alguns minutos e tente novamente." }),
+});
+
+app.use(["/login", "/auth/google", "/recuperar", "/resetar"], authLimiter);
+
 app.get("/healthz", (req, res) => {
   res.json({ status: "ok" });
 });
@@ -203,6 +214,23 @@ const upload = multer({
     }
 
     cb(null, true);
+  },
+});
+
+const uploadPhoto = multer({
+  storage: usaCloudinary ? multer.memoryStorage() : diskStorage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: function (req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const imageTypes = new Map([
+      ["image/jpeg", [".jpg", ".jpeg"]],
+      ["image/png", [".png"]],
+      ["image/webp", [".webp"]],
+      ["image/gif", [".gif"]],
+    ]);
+    const extensions = imageTypes.get(file.mimetype);
+    if (!extensions?.includes(ext)) return cb(new Error("A foto deve ser JPG, PNG, WEBP ou GIF."));
+    return cb(null, true);
   },
 });
 
@@ -363,7 +391,7 @@ app.get("/api/status", (req, res) => {
 
 /* ================= CADASTRO ================= */
 
-app.post("/cadastro", upload.single("foto"), async (req, res) => {
+app.post("/cadastro", uploadPhoto.single("foto"), async (req, res) => {
   try {
     const { nome, email, senha } = req.body;
     const emailNormalizado = normalizeEmail(email);
@@ -719,7 +747,8 @@ app.delete("/conta", autenticar, async (req, res) => {
 
 /* ================= EDITAR PERFIL ================= */
 
-app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
+app.put("/perfil", autenticar, uploadPhoto.single("foto"), async (req, res) => {
+  let fotoUrl = null;
   try {
     const {
       nome,
@@ -730,7 +759,7 @@ app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
       aberto_para,
     } = req.body;
 
-    let fotoUrl = null;
+    const perfilAnterior = await userService.findPrivateProfile(req.usuario.id);
 
     if (req.file) {
       const arquivo = await salvarArquivoEnviado(req.file, "postfan/perfis");
@@ -751,11 +780,23 @@ app.put("/perfil", autenticar, upload.single("foto"), async (req, res) => {
       return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
+    if (usuario.status === "invalid_name") {
+      if (fotoUrl) await removerArquivoArmazenado(fotoUrl);
+      return res.status(400).json({ erro: "O nome é obrigatório." });
+    }
+
+    if (fotoUrl && perfilAnterior?.foto && perfilAnterior.foto !== fotoUrl) {
+      removerArquivoArmazenado(perfilAnterior.foto).catch(() => {
+        console.error("Falha ao remover foto de perfil substituída.");
+      });
+    }
+
     res.json({
       mensagem: "Perfil atualizado com sucesso!",
       usuario,
     });
   } catch (error) {
+    if (fotoUrl) removerArquivoArmazenado(fotoUrl).catch(() => {});
     console.error("❌ Erro ao editar perfil:", error.message);
     res.status(500).json({ erro: "Erro ao editar perfil." });
   }
@@ -893,41 +934,11 @@ app.delete("/posts/:id", autenticar, async (req, res) => {
 
 app.post("/curtir", autenticar, async (req, res) => {
   try {
-    const { post_id } = req.body;
-
-    if (!post_id) {
-      return res.status(400).json({ erro: "post_id é obrigatório." });
-    }
-
-    const existe = await pool.query(
-      `
-      SELECT * FROM curtidas 
-      WHERE usuario_id = $1 AND post_id = $2
-      `,
-      [req.usuario.id, post_id],
-    );
-
-    if (existe.rows.length > 0) {
-      await pool.query(
-        `
-        DELETE FROM curtidas 
-        WHERE usuario_id = $1 AND post_id = $2
-        `,
-        [req.usuario.id, post_id],
-      );
-
-      return res.json({ mensagem: "Curtida removida.", curtiu: false });
-    }
-
-    await pool.query(
-      `
-      INSERT INTO curtidas (usuario_id, post_id)
-      VALUES ($1, $2)
-      `,
-      [req.usuario.id, post_id],
-    );
-
-    res.json({ mensagem: "Post curtido.", curtiu: true });
+    const postId = socialService.parsePositiveId(req.body.post_id);
+    if (!postId) return res.status(400).json({ erro: "post_id é obrigatório." });
+    const result = await socialService.toggleLike(req.usuario.id, postId);
+    if (result.status === "not_found") return res.status(404).json({ erro: "Post não encontrado." });
+    return res.json({ mensagem: result.curtiu ? "Post curtido." : "Curtida removida.", curtiu: result.curtiu });
   } catch (error) {
     console.error("❌ Erro ao curtir:", error.message);
     res.status(500).json({ erro: "Erro ao curtir post." });
@@ -938,28 +949,10 @@ app.post("/curtir", autenticar, async (req, res) => {
 
 app.get("/comentarios", autenticar, async (req, res) => {
   try {
-    const { post_id } = req.query;
-
-    if (!post_id) {
-      return res.status(400).json({ erro: "post_id é obrigatório." });
-    }
-
-    const comentarios = await pool.query(
-      `
-      SELECT 
-        cm.*,
-        COALESCE(cm.conteudo, cm.texto) AS conteudo,
-        u.nome,
-        u.foto
-      FROM comentarios cm
-      JOIN usuarios u ON u.id = cm.usuario_id
-      WHERE cm.post_id = $1
-      ORDER BY cm.criado_em ASC
-      `,
-      [post_id],
-    );
-
-    res.json(comentarios.rows);
+    const postId = socialService.parsePositiveId(req.query.post_id);
+    if (!postId) return res.status(400).json({ erro: "post_id é obrigatório." });
+    if (!(await postService.postExists(postId))) return res.status(404).json({ erro: "Post não encontrado." });
+    return res.json(await socialService.listComments(postId));
   } catch (error) {
     console.error("❌ Erro ao buscar comentários:", error.message);
     res.status(500).json({ erro: "Erro ao buscar comentários." });
@@ -969,43 +962,24 @@ app.get("/comentarios", autenticar, async (req, res) => {
 app.post("/comentarios", autenticar, async (req, res) => {
   try {
     const { post_id, conteudo } = req.body;
+    const postId = socialService.parsePositiveId(post_id);
+    const texto = String(conteudo || "").trim();
 
-    if (!post_id || !conteudo) {
+    if (!postId || !texto) {
       return res.status(400).json({
         erro: "post_id e conteudo são obrigatórios.",
       });
     }
 
-    if (bloquearSeNecessario(conteudo, res)) {
+    if (bloquearSeNecessario(texto, res)) {
       return;
     }
-
-    const novo = await pool.query(
-      `
-      INSERT INTO comentarios (usuario_id, post_id, conteudo, texto)
-      VALUES ($1, $2, $3, $3)
-      RETURNING *
-      `,
-      [req.usuario.id, post_id, conteudo],
-    );
-
-    const comentarioCompleto = await pool.query(
-      `
-      SELECT 
-        cm.*,
-        COALESCE(cm.conteudo, cm.texto) AS conteudo,
-        u.nome,
-        u.foto
-      FROM comentarios cm
-      JOIN usuarios u ON u.id = cm.usuario_id
-      WHERE cm.id = $1
-      `,
-      [novo.rows[0].id],
-    );
+    const comentario = await socialService.createComment(req.usuario.id, postId, texto);
+    if (!comentario) return res.status(404).json({ erro: "Post não encontrado." });
 
     res.status(201).json({
       mensagem: "Comentário criado com sucesso!",
-      comentario: comentarioCompleto.rows[0],
+      comentario,
     });
   } catch (error) {
     console.error("❌ Erro ao comentar:", error.message);
@@ -1031,34 +1005,19 @@ app.put("/comentarios/:id", autenticar, async (req, res) => {
       return;
     }
 
-    const comentario = await pool.query(
-      "SELECT * FROM comentarios WHERE id = $1",
-      [comentarioId],
-    );
-
-    if (comentario.rows.length === 0) {
+    const result = await socialService.updateComment(comentarioId, req.usuario.id, textoComentario);
+    if (result.status === "not_found") {
       return res.status(404).json({ erro: "Comentário não encontrado." });
     }
-
-    if (Number(comentario.rows[0].usuario_id) !== Number(req.usuario.id)) {
+    if (result.status === "forbidden") {
       return res.status(403).json({
         erro: "Você só pode editar seus próprios comentários.",
       });
     }
 
-    const atualizado = await pool.query(
-      `
-      UPDATE comentarios
-      SET conteudo = $1, texto = $1
-      WHERE id = $2
-      RETURNING *
-      `,
-      [textoComentario, comentarioId],
-    );
-
     res.json({
       mensagem: "Comentário atualizado com sucesso!",
-      comentario: atualizado.rows[0],
+      comentario: result.comment,
     });
   } catch (error) {
     console.error("Erro ao editar comentário:", error.message);
@@ -1074,26 +1033,19 @@ app.delete("/comentarios/:id", autenticar, async (req, res) => {
       return res.status(400).json({ erro: "Comentário inválido." });
     }
 
-    const comentario = await pool.query(
-      "SELECT * FROM comentarios WHERE id = $1",
-      [comentarioId],
-    );
-
-    if (comentario.rows.length === 0) {
+    const result = await socialService.deleteComment(comentarioId, req.usuario.id);
+    if (result.status === "not_found") {
       return res.status(404).json({ erro: "Comentário não encontrado." });
     }
-
-    if (Number(comentario.rows[0].usuario_id) !== Number(req.usuario.id)) {
+    if (result.status === "forbidden") {
       return res.status(403).json({
         erro: "Você só pode excluir seus próprios comentários.",
       });
     }
 
-    await pool.query("DELETE FROM comentarios WHERE id = $1", [comentarioId]);
-
     res.json({
       mensagem: "Comentário excluído com sucesso!",
-      post_id: comentario.rows[0].post_id,
+      post_id: result.postId,
     });
   } catch (error) {
     console.error("Erro ao excluir comentário:", error.message);
@@ -1107,21 +1059,12 @@ app.delete("/comentarios/:id", autenticar, async (req, res) => {
 
 app.post("/compartilhar", autenticar, async (req, res) => {
   try {
-    const { post_id } = req.body;
-
-    if (!post_id) {
-      return res.status(400).json({ erro: "post_id é obrigatório." });
-    }
-
-    await pool.query(
-      `
-      INSERT INTO compartilhamentos (usuario_id, post_id)
-      VALUES ($1, $2)
-      `,
-      [req.usuario.id, post_id],
-    );
-
-    res.json({ mensagem: "Compartilhamento registrado com sucesso!" });
+    const postId = socialService.parsePositiveId(req.body.post_id);
+    if (!postId) return res.status(400).json({ erro: "post_id é obrigatório." });
+    const result = await socialService.share(req.usuario.id, postId);
+    if (result.status === "not_found") return res.status(404).json({ erro: "Post não encontrado." });
+    if (result.status === "duplicate") return res.status(409).json({ erro: "Você já compartilhou esta publicação." });
+    return res.status(201).json({ mensagem: "Compartilhamento registrado com sucesso!" });
   } catch (error) {
     console.error("❌ Erro ao compartilhar:", error.message);
     res.status(500).json({ erro: "Erro ao compartilhar." });
@@ -1471,58 +1414,11 @@ app.post("/seguir/:id", autenticar, async (req, res) => {
   const seguindo_id = Number(req.params.id);
 
   try {
-    if (seguidor_id === seguindo_id) {
-      return res.status(400).json({
-        erro: "Você não pode seguir você mesmo.",
-      });
-    }
-
-    const usuarioExiste = await pool.query(
-      "SELECT id FROM usuarios WHERE id = $1",
-      [seguindo_id],
-    );
-
-    if (usuarioExiste.rows.length === 0) {
-      return res.status(404).json({ erro: "Usuário não encontrado." });
-    }
-
-    const existe = await pool.query(
-      `
-      SELECT * FROM seguidores
-      WHERE seguidor_id = $1
-      AND seguindo_id = $2
-      `,
-      [seguidor_id, seguindo_id],
-    );
-
-    if (existe.rows.length > 0) {
-      await pool.query(
-        `
-        DELETE FROM seguidores
-        WHERE seguidor_id = $1
-        AND seguindo_id = $2
-        `,
-        [seguidor_id, seguindo_id],
-      );
-
-      return res.json({
-        mensagem: "Você deixou de seguir este usuário.",
-        seguindo: false,
-      });
-    }
-
-    await pool.query(
-      `
-      INSERT INTO seguidores (seguidor_id, seguindo_id)
-      VALUES ($1, $2)
-      `,
-      [seguidor_id, seguindo_id],
-    );
-
-    res.json({
-      mensagem: "Você começou a seguir este usuário.",
-      seguindo: true,
-    });
+    if (!socialService.parsePositiveId(seguindo_id)) return res.status(400).json({ erro: "Usuário inválido." });
+    const result = await socialService.toggleFollow(seguidor_id, seguindo_id);
+    if (result.status === "self") return res.status(400).json({ erro: "Você não pode seguir você mesmo." });
+    if (result.status === "not_found") return res.status(404).json({ erro: "Usuário não encontrado." });
+    return res.json({ mensagem: result.seguindo ? "Você começou a seguir este usuário." : "Você deixou de seguir este usuário.", seguindo: result.seguindo });
   } catch (error) {
     console.error("❌ Erro ao seguir:", error.message);
 
@@ -2163,13 +2059,14 @@ app.delete("/api/grupos/:id", autenticar, async (req, res) => {
 });
 
 app.use((error, req, res, next) => {
+  void next;
   if (error instanceof multer.MulterError) {
     const status = error.code === "LIMIT_FILE_SIZE" ? 413 : 400;
 
     return res.status(status).json({
       erro:
         error.code === "LIMIT_FILE_SIZE"
-          ? "Arquivo maior que o limite de 10MB."
+          ? "Arquivo maior que o limite permitido."
           : "Erro ao processar arquivo enviado.",
     });
   }
@@ -2178,7 +2075,12 @@ app.use((error, req, res, next) => {
     return res.status(400).json({ erro: error.message });
   }
 
-  next(error);
+  if (error?.message === "A foto deve ser JPG, PNG, WEBP ou GIF.") {
+    return res.status(400).json({ erro: error.message });
+  }
+
+  console.error("Erro inesperado:", process.env.NODE_ENV === "production" ? error?.name : error);
+  return res.status(500).json({ erro: "Erro interno no servidor." });
 });
 
 /* ================= FRONTEND SPA ================= */

@@ -65,4 +65,19 @@ describe("interações sociais, busca e notificações", () => {
     await request(app).patch("/notifications/read-all").set(await authHeader(owner)).expect(200);
     expect((await prisma.notificacao.findUnique({ where: { id: notification.id } })).lidaEm).toBeTruthy();
   });
+
+  it("cria, lista, edita e exclui comentário com autorização e notificação", async () => {
+    const author = await createTestUser(); const actor = await createTestUser(); const intruder = await createTestUser();
+    const post = await prisma.post.create({ data: { usuarioId: author.id, conteudo: "Comentários" } });
+    const created = await request(app).post("/comentarios").set(await authHeader(actor)).send({ post_id: post.id, conteudo: " Comentário " }).expect(201);
+    const commentId = created.body.comentario.id;
+    expect(created.body.comentario.conteudo).toBe("Comentário");
+    expect(await prisma.notificacao.count({ where: { destinatarioId: author.id, tipo: "comentario" } })).toBe(1);
+    const listed = await request(app).get("/comentarios").query({ post_id: post.id }).set(await authHeader(author)).expect(200);
+    expect(listed.body[0].id).toBe(commentId);
+    await request(app).put(`/comentarios/${commentId}`).set(await authHeader(intruder)).send({ conteudo: "Ataque" }).expect(403);
+    await request(app).put(`/comentarios/${commentId}`).set(await authHeader(actor)).send({ conteudo: "Editado" }).expect(200);
+    await request(app).delete(`/comentarios/${commentId}`).set(await authHeader(intruder)).expect(403);
+    await request(app).delete(`/comentarios/${commentId}`).set(await authHeader(actor)).expect(200);
+  });
 });

@@ -17,7 +17,10 @@ if (!process.env.DATABASE_URL_TEST) {
 
 assertTestDatabase("Suite automatizada", process.env.DATABASE_URL_TEST);
 process.env.DATABASE_URL = process.env.DATABASE_URL_TEST;
-process.env.JWT_SECRET = "postfan-test-only-jwt-secret";
+process.env.SESSION_SECRET = "postfan-test-only-session-secret-32-chars";
+process.env.GOOGLE_CLIENT_ID = "123456-postfan-test.apps.googleusercontent.com";
+process.env.EMAIL_USER = "no-reply@postfan.invalid";
+process.env.EMAIL_PASS = "test-only-password";
 process.env.CLOUDINARY_CLOUD_NAME = "";
 process.env.CLOUDINARY_API_KEY = "";
 process.env.CLOUDINARY_API_SECRET = "";

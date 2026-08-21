@@ -21,8 +21,10 @@ const expectedTables = [
   "grupo_solicitacoes",
   "grupos",
   "mensagens_privadas",
+  "notificacoes",
   "posts",
   "seguidores",
+  "sessoes",
   "usuarios",
 ];
 
@@ -34,6 +36,7 @@ const expectedChecks = [
   "grupo_solicitacoes_status_check",
   "grupos_tipo_check",
   "mensagens_privadas_destinatarios_distintos_check",
+  "notificacoes_tipo_check",
   "posts_conteudo_ou_arquivo_check",
   "seguidores_nao_seguir_si_check",
   "usuarios_metodo_autenticacao_check",
@@ -111,8 +114,8 @@ async function main() {
       throw new Error(`Esperadas ${expectedTables.length} PKs; encontradas ${primaryKeys.rowCount}.`);
     }
 
-    if (foreignKeys.rowCount !== 21) {
-      throw new Error(`Esperadas 21 FKs; encontradas ${foreignKeys.rowCount}.`);
+    if (foreignKeys.rowCount !== 25) {
+      throw new Error(`Esperadas 25 FKs; encontradas ${foreignKeys.rowCount}.`);
     }
 
     console.log(

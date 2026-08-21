@@ -1,12 +1,11 @@
-const jwt = require("jsonwebtoken");
+const sessionService = require("../../src/modules/auth/session.service");
 
-function authHeader(user) {
-  const token = jwt.sign(
-    { id: user.id, nome: user.nome, email: user.email },
-    process.env.JWT_SECRET,
-    { expiresIn: "5m" },
-  );
-  return { Authorization: `Bearer ${token}` };
+async function authHeader(user) {
+  const session = await sessionService.createSession(user.id, "postfan-test-agent");
+  return {
+    Cookie: `postfan_session=${session.token}`,
+    "X-CSRF-Token": sessionService.csrfTokenFor(session.token, process.env.SESSION_SECRET),
+  };
 }
 
 module.exports = { authHeader };

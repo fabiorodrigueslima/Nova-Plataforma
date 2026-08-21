@@ -20,25 +20,33 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcrypt");
 const nodemailer = require("nodemailer");
-const { v4: uuidv4 } = require("uuid");
-const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const multer = require("multer");
 const fs = require("fs");
-const { OAuth2Client } = require("google-auth-library");
 const cloudinary = require("cloudinary").v2;
 const pool = require("./db");
 const { bloquearSeNecessario } = require("./moderacao");
 const userService = require("./src/modules/users/user.service");
+const authService = require("./src/modules/auth/auth.service");
+const { normalizeEmail } = require("./src/modules/auth/email");
+const googleVerifier = require("./src/modules/auth/google-verifier");
+const sessionService = require("./src/modules/auth/session.service");
+const postService = require("./src/modules/posts/post.service");
+const socialService = require("./src/modules/social/social.service");
+const prisma = require("./src/lib/prisma");
 
 const app = express();
 
 /* ================= CONFIG ================= */
 
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET;
+const SESSION_SECRET = process.env.SESSION_SECRET;
+const SESSION_COOKIE_NAME = process.env.NODE_ENV === "production" ? "__Host-postfan_session" : "postfan_session";
+const RECOVERY_PUBLIC_MESSAGE =
+  "Se este email estiver cadastrado, enviaremos um link de recuperacao.";
 
-if (!JWT_SECRET) {
-  throw new Error("JWT_SECRET precisa estar configurado no ambiente.");
+if (!SESSION_SECRET || SESSION_SECRET.length < 32) {
+  throw new Error("SESSION_SECRET precisa ter pelo menos 32 caracteres.");
 }
 
 const FRONTEND_URL =
@@ -48,12 +56,7 @@ const FRONTEND_URL =
 
 const frontendDistDir = path.resolve(__dirname, "../dist");
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID?.trim();
-const GOOGLE_CLIENT_ID_VALIDO = /^[0-9]+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(
-  GOOGLE_CLIENT_ID || "",
-);
-const googleClient = GOOGLE_CLIENT_ID_VALIDO
-  ? new OAuth2Client(GOOGLE_CLIENT_ID)
-  : null;
+const GOOGLE_CLIENT_ID_VALIDO = googleVerifier.isValidConfiguration(GOOGLE_CLIENT_ID);
 const usaCloudinary = Boolean(
   process.env.CLOUDINARY_CLOUD_NAME &&
     process.env.CLOUDINARY_API_KEY &&
@@ -96,10 +99,7 @@ if (process.env.RENDER_EXTERNAL_URL) {
 }
 
 function validarOrigem(origin, callback) {
-  const origemLocal =
-    /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin || "");
-
-  if (!origin || origemLocal || allowedOrigins.includes(origin)) {
+  if (!origin || allowedOrigins.includes(origin)) {
     return callback(null, true);
   }
 
@@ -111,8 +111,8 @@ app.use(
   cors({
     origin: validarOrigem,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-CSRF-Token"],
   }),
 );
 
@@ -244,6 +244,20 @@ async function salvarArquivoEnviado(file, folder = "postfan/uploads") {
   };
 }
 
+async function removerArquivoArmazenado(url) {
+  if (!url) return;
+  if (url.startsWith("/uploads/")) {
+    const target = path.resolve(uploadsDir, path.basename(url));
+    if (path.dirname(target) === uploadsDir && fs.existsSync(target)) fs.unlinkSync(target);
+    return;
+  }
+  if (usaCloudinary && url.includes("res.cloudinary.com")) {
+    const pathname = new URL(url).pathname;
+    const uploadPart = pathname.split("/upload/")[1]?.replace(/^v\d+\//, "");
+    if (uploadPart) await cloudinary.uploader.destroy(uploadPart.replace(/\.[^.]+$/, ""), { resource_type: "auto" });
+  }
+}
+
 /* ================= BANCO ================= */
 
 pool
@@ -290,55 +304,51 @@ function obterFrontendUrl(req) {
   return FRONTEND_URL;
 }
 
-function montarUsuarioPublico(usuario) {
-  return {
-    id: usuario.id,
-    nome: usuario.nome,
-    email: usuario.email,
-    foto: usuario.foto,
-    bio: usuario.bio,
-    essencia_representa: usuario.essencia_representa,
-    essencia_tema: usuario.essencia_tema,
-    essencia_frase: usuario.essencia_frase,
-    aberto_para: usuario.aberto_para,
-    provider: usuario.provider || "local",
-  };
+function cookieOptions(expires) {
+  return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires };
 }
 
-function gerarTokenUsuario(usuario) {
-  return jwt.sign(
-    {
-      id: usuario.id,
-      nome: usuario.nome,
-      email: usuario.email,
-    },
-    JWT_SECRET,
-    { expiresIn: "7d" },
-  );
+function readCookie(req, name) {
+  const header = req.headers.cookie || "";
+  for (const part of header.split(";")) {
+    const separator = part.indexOf("=");
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() === name) return decodeURIComponent(part.slice(separator + 1).trim());
+  }
+  return null;
 }
 
-function autenticar(req, res, next) {
-  const authHeader = req.headers.authorization;
+async function issueSession(req, res, usuarioId) {
+  const session = await sessionService.createSession(usuarioId, req.get("user-agent"));
+  res.cookie(SESSION_COOKIE_NAME, session.token, cookieOptions(session.expiraEm));
+  return sessionService.csrfTokenFor(session.token, SESSION_SECRET);
+}
 
-  if (!authHeader) {
-    return res.status(401).json({ erro: "Token não enviado." });
-  }
+function clearSessionCookie(res) {
+  res.clearCookie(SESSION_COOKIE_NAME, cookieOptions(new Date(0)));
+}
 
-  const token = authHeader.split(" ")[1];
-
-  if (!token) {
-    return res.status(401).json({ erro: "Token inválido." });
-  }
-
+async function autenticar(req, res, next) {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.usuario = decoded;
-
-    userService.touchLastAccess(decoded.id).catch(() => {});
-
-    next();
+    const token = readCookie(req, SESSION_COOKIE_NAME);
+    const session = await sessionService.findActiveSession(token);
+    if (!session) {
+      clearSessionCookie(res);
+      return res.status(401).json({ erro: "Sessão inválida ou expirada." });
+    }
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+      const expected = sessionService.csrfTokenFor(token, SESSION_SECRET);
+      if (!sessionService.csrfMatches(req.get("x-csrf-token"), expected)) {
+        return res.status(403).json({ erro: "Proteção CSRF inválida." });
+      }
+    }
+    req.usuario = session.usuario;
+    req.session = session;
+    req.sessionToken = token;
+    userService.touchLastAccess(session.usuarioId).catch(() => {});
+    return next();
   } catch {
-    return res.status(401).json({ erro: "Token expirado ou inválido." });
+    return res.status(401).json({ erro: "Sessão inválida ou expirada." });
   }
 }
 
@@ -356,8 +366,9 @@ app.get("/api/status", (req, res) => {
 app.post("/cadastro", upload.single("foto"), async (req, res) => {
   try {
     const { nome, email, senha } = req.body;
+    const emailNormalizado = normalizeEmail(email);
 
-    if (!nome || !email || !senha) {
+    if (!nome || !emailNormalizado || !senha) {
       return res.status(400).json({
         erro: "Preencha todos os os campos.",
       });
@@ -369,13 +380,10 @@ app.post("/cadastro", upload.single("foto"), async (req, res) => {
       });
     }
 
-    const existe = await pool.query(
-      "SELECT id FROM usuarios WHERE email = $1",
-      [email],
-    );
+    const existe = await authService.emailExists(emailNormalizado);
 
-    if (existe.rows.length > 0) {
-      return res.status(400).json({
+    if (existe) {
+      return res.status(409).json({
         erro: "Este email já está cadastrado.",
       });
     }
@@ -389,40 +397,28 @@ app.post("/cadastro", upload.single("foto"), async (req, res) => {
 
     const senhaHash = await bcrypt.hash(senha, 10);
 
-    const novo = await pool.query(
-      `
-      INSERT INTO usuarios (
-        nome,
-        email,
-        senha,
-        foto
-      )
-      VALUES ($1, $2, $3, $4)
+    const usuario = await authService.createLocalUser({
+      nome,
+      email: emailNormalizado,
+      passwordHash: senhaHash,
+      photo: fotoUrl,
+    });
 
-      RETURNING
-        id,
-        nome,
-        email,
-        foto,
-        bio,
-        criado_em
-      `,
-      [nome, email, senhaHash, fotoUrl],
-    );
-
-    const usuario = novo.rows[0];
-
-    const token = gerarTokenUsuario(usuario);
+    const csrfToken = await issueSession(req, res, usuario.id);
 
     res.status(201).json({
       mensagem: "Cadastro realizado com sucesso!",
-      token,
-      usuario: montarUsuarioPublico(usuario),
+      csrfToken,
+      usuario,
     });
   } catch (error) {
     console.error("❌ Erro no cadastro:", error.message);
 
-    res.status(500).json({
+    if (authService.isUniqueConstraintError(error)) {
+      return res.status(409).json({ erro: "Este email já está cadastrado." });
+    }
+
+    return res.status(500).json({
       erro: "Erro interno no servidor.",
     });
   }
@@ -433,33 +429,29 @@ app.post("/cadastro", upload.single("foto"), async (req, res) => {
 app.post("/login", async (req, res) => {
   try {
     const { email, senha } = req.body;
+    const emailNormalizado = normalizeEmail(email);
 
-    if (!email || !senha) {
+    if (!emailNormalizado || !senha) {
       return res.status(400).json({ erro: "Digite email e senha." });
     }
 
-    const resultado = await pool.query(
-      "SELECT * FROM usuarios WHERE email = $1",
-      [email],
-    );
+    const usuario = await authService.findLoginUser(emailNormalizado);
 
-    if (resultado.rows.length === 0) {
+    if (!usuario) {
       return res.json({
         autenticado: false,
         erro: "Email ou senha inválidos.",
       });
     }
 
-    const usuario = resultado.rows[0];
-
-    if (!usuario.senha) {
+    if (!usuario.passwordHash) {
       return res.status(400).json({
         autenticado: false,
         erro: "Esta conta foi criada com Google. Use o botão Entrar com Google.",
       });
     }
 
-    const senhaCorreta = await bcrypt.compare(senha, usuario.senha);
+    const senhaCorreta = await bcrypt.compare(senha, usuario.passwordHash);
 
     if (!senhaCorreta) {
       return res.json({
@@ -468,13 +460,13 @@ app.post("/login", async (req, res) => {
       });
     }
 
-    const token = gerarTokenUsuario(usuario);
+    const csrfToken = await issueSession(req, res, usuario.user.id);
 
     res.json({
       autenticado: true,
       mensagem: "Login realizado com sucesso!",
-      token,
-      usuario: montarUsuarioPublico(usuario),
+      csrfToken,
+      usuario: usuario.user,
     });
   } catch (error) {
     console.error("❌ Erro no login:", error.message);
@@ -494,7 +486,7 @@ app.post("/auth/google", async (req, res) => {
       });
     }
 
-    if (!googleClient || !GOOGLE_CLIENT_ID_VALIDO) {
+    if (!GOOGLE_CLIENT_ID_VALIDO) {
       return res.status(503).json({
         erro:
           "Google Client ID inválido. Use o ID que termina com .apps.googleusercontent.com.",
@@ -505,70 +497,30 @@ app.post("/auth/google", async (req, res) => {
       return res.status(400).json({ erro: "Credencial do Google não enviada." });
     }
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken: credential,
-      audience: GOOGLE_CLIENT_ID,
-    });
+    const payload = await googleVerifier.verify(credential, GOOGLE_CLIENT_ID);
 
-    const payload = ticket.getPayload();
-
-    if (!payload?.email || !payload?.sub) {
+    if (!payload?.email || !payload?.sub || payload.email_verified !== true) {
       return res.status(400).json({ erro: "Conta Google inválida." });
     }
 
-    const email = payload.email.toLowerCase();
+    const email = normalizeEmail(payload.email);
     const nome = payload.name || email.split("@")[0];
     const foto = payload.picture || null;
 
-    const existente = await pool.query("SELECT * FROM usuarios WHERE email = $1", [
+    const usuario = await authService.findOrCreateGoogleUser({
       email,
-    ]);
+      googleId: payload.sub,
+      name: nome,
+      photo: foto,
+    });
 
-    let usuario;
-
-    if (existente.rows.length > 0) {
-      const atual = existente.rows[0];
-
-      const atualizado = await pool.query(
-        `
-        UPDATE usuarios
-        SET google_id = COALESCE(google_id, $1),
-            provider = CASE WHEN senha IS NULL THEN 'google' ELSE provider END,
-            foto = COALESCE(foto, $2)
-        WHERE id = $3
-        RETURNING *
-        `,
-        [payload.sub, foto, atual.id],
-      );
-
-      usuario = atualizado.rows[0];
-    } else {
-      const novo = await pool.query(
-        `
-        INSERT INTO usuarios (
-          nome,
-          email,
-          senha,
-          foto,
-          google_id,
-          provider
-        )
-        VALUES ($1, $2, NULL, $3, $4, 'google')
-        RETURNING *
-        `,
-        [nome, email, foto, payload.sub],
-      );
-
-      usuario = novo.rows[0];
-    }
-
-    const token = gerarTokenUsuario(usuario);
+    const csrfToken = await issueSession(req, res, usuario.id);
 
     res.json({
       autenticado: true,
       mensagem: "Login com Google realizado com sucesso!",
-      token,
-      usuario: montarUsuarioPublico(usuario),
+      csrfToken,
+      usuario,
     });
   } catch (error) {
     console.error("Erro no login com Google:", error.message);
@@ -581,6 +533,7 @@ app.post("/auth/google", async (req, res) => {
 app.post("/recuperar", async (req, res) => {
   try {
     const { email } = req.body;
+    const emailNormalizado = normalizeEmail(email);
     const emailUser = process.env.EMAIL_USER;
     const emailPass = process.env.EMAIL_PASS;
     const emailHost = process.env.EMAIL_HOST || "smtp.gmail.com";
@@ -588,7 +541,7 @@ app.post("/recuperar", async (req, res) => {
     const emailSecure =
       process.env.EMAIL_SECURE === "true" || emailPort === 465;
 
-    if (!email) {
+    if (!emailNormalizado) {
       return res.status(400).json({ erro: "Digite seu email." });
     }
 
@@ -600,31 +553,18 @@ app.post("/recuperar", async (req, res) => {
       });
     }
 
-    const resultado = await pool.query(
-      "SELECT * FROM usuarios WHERE email = $1",
-      [email],
-    );
+    const accountExists = await authService.emailExists(emailNormalizado);
 
-    if (resultado.rows.length === 0) {
-      return res.json({
-        mensagem:
-          "Se este email estiver cadastrado, enviaremos um link de recuperação.",
-      });
+    if (!accountExists) {
+      return res.json({ mensagem: RECOVERY_PUBLIC_MESSAGE });
     }
 
-    const token = uuidv4();
+    const token = crypto.randomBytes(32).toString("base64url");
 
     const expira = new Date();
     expira.setHours(expira.getHours() + 1);
 
-    await pool.query(
-      `
-      UPDATE usuarios
-      SET token_recuperacao = $1, token_expira = $2
-      WHERE email = $3
-      `,
-      [token, expira, email],
-    );
+    await authService.createPasswordRecovery(emailNormalizado, token, expira);
 
     const link = `${obterFrontendUrl(req)}/resetar-senha?token=${encodeURIComponent(
       token,
@@ -644,9 +584,10 @@ app.post("/recuperar", async (req, res) => {
       },
     });
 
-    await transporter.sendMail({
+    try {
+      await transporter.sendMail({
       from: `"Postfan" <${emailUser}>`,
-      to: email,
+      to: emailNormalizado,
       subject: "Recuperação de senha - Postfan",
       html: `
         <div style="font-family: Arial; padding: 20px;">
@@ -658,11 +599,14 @@ app.post("/recuperar", async (req, res) => {
           <p>Este link expira em 1 hora.</p>
         </div>
       `,
-    });
+      });
+    } catch (error) {
+      console.error("Falha SMTP na recuperacao:", error.code || error.name);
+    }
 
-    res.json({ mensagem: "Link de recuperação enviado para seu email." });
+    res.json({ mensagem: RECOVERY_PUBLIC_MESSAGE });
   } catch (error) {
-    console.error("❌ Erro ao recuperar senha:", error.message);
+    console.error("Falha interna na recuperacao:", error.code || error.name);
 
     if (
       ["ETIMEDOUT", "ESOCKET", "ECONNECTION"].includes(error.code) ||
@@ -698,36 +642,24 @@ app.post("/resetar", async (req, res) => {
       });
     }
 
-    const resultado = await pool.query(
-      "SELECT * FROM usuarios WHERE token_recuperacao = $1",
-      [tokenLimpo],
+    const senhaHash = await bcrypt.hash(novaSenha, 10);
+    const resultado = await authService.resetPasswordWithToken(
+      tokenLimpo,
+      senhaHash,
     );
 
-    if (resultado.rows.length === 0) {
+    if (resultado.status === "invalid") {
       return res.status(400).json({
         erro:
           "Token inválido. Solicite um novo link de recuperação e use o link mais recente enviado por email.",
       });
     }
 
-    const usuario = resultado.rows[0];
-
-    if (usuario.token_expira && new Date() > usuario.token_expira) {
+    if (resultado.status === "expired") {
       return res.status(400).json({
         erro: "Token expirado. Solicite outro link.",
       });
     }
-
-    const senhaHash = await bcrypt.hash(novaSenha, 10);
-
-    await pool.query(
-      `
-      UPDATE usuarios
-      SET senha = $1, token_recuperacao = NULL, token_expira = NULL
-      WHERE id = $2
-      `,
-      [senhaHash, usuario.id],
-    );
 
     res.json({ mensagem: "Senha alterada com sucesso!" });
   } catch (error) {
@@ -746,10 +678,25 @@ app.get("/me", autenticar, async (req, res) => {
       return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
-    res.json(usuario);
+    res.json({
+      usuario,
+      csrfToken: sessionService.csrfTokenFor(req.sessionToken, SESSION_SECRET),
+    });
   } catch {
     res.status(500).json({ erro: "Erro ao buscar usuário." });
   }
+});
+
+app.post("/logout", autenticar, async (req, res) => {
+  await sessionService.revokeSession(req.session.id);
+  clearSessionCookie(res);
+  res.json({ mensagem: "Logout realizado com sucesso." });
+});
+
+app.post("/sessions/revoke-all", autenticar, async (req, res) => {
+  await sessionService.revokeAllUserSessions(req.usuario.id);
+  clearSessionCookie(res);
+  res.json({ mensagem: "Todas as sessões foram revogadas." });
 });
 
 /* ================= EXCLUIR CONTA ================= */
@@ -829,29 +776,9 @@ app.post("/upload", autenticar, upload.single("imagem"), async (req, res) => {
 /* ================= LISTAR POSTS ================= */
 app.get("/posts", autenticar, async (req, res) => {
   try {
-    const posts = await pool.query(
-      `
-      SELECT 
-        p.*,
-        u.nome,
-        u.foto,
-        COALESCE((SELECT COUNT(*) FROM curtidas WHERE post_id = p.id), 0) AS total_curtidas,
-        COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios,
-        COALESCE((SELECT COUNT(*) FROM compartilhamentos WHERE post_id = p.id), 0) AS total_compartilhamentos,
-        EXISTS (
-          SELECT 1 FROM curtidas 
-          WHERE curtidas.post_id = p.id 
-          AND curtidas.usuario_id = $1
-        ) AS curtiu
-      FROM posts p
-      JOIN usuarios u ON u.id = p.usuario_id
-      ORDER BY p.criado_em DESC
-      LIMIT 50
-      `,
-      [req.usuario.id],
-    );
-
-    res.json(posts.rows);
+    const page = await postService.listPosts({ viewerId: req.usuario.id, limit: req.query.limit, cursor: req.query.cursor });
+    if (page.status === "invalid_cursor") return res.status(400).json({ erro: "Cursor inválido." });
+    res.json({ items: page.items, nextCursor: page.nextCursor });
   } catch (error) {
     console.error("❌ Erro ao buscar posts:", error.message);
     res.status(500).json({ erro: "Erro ao buscar posts." });
@@ -860,10 +787,10 @@ app.get("/posts", autenticar, async (req, res) => {
 
 /* ================= CRIAR POST ================= */
 app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
+  let imagem = null;
   try {
     const { conteudo, tema, sentimento } = req.body;
-
-    let imagem = null;
+    const texto = String(conteudo || "").trim();
     let tipoArquivo = null;
     let nomeArquivo = null;
 
@@ -874,68 +801,27 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
       nomeArquivo = arquivo.nome;
     }
 
-    if (!conteudo && !imagem) {
+    if (!texto && !imagem) {
       return res.status(400).json({
         erro: "Para publicar no PostFan, compartilhe uma ideia ou adicione uma foto, vídeo ou documento.",
       });
     }
 
-    if (bloquearSeNecessario(conteudo, res)) {
+    if (bloquearSeNecessario(texto, res)) {
+      await removerArquivoArmazenado(imagem);
       return;
     }
-
-    const novo = await pool.query(
-      `
-      INSERT INTO posts (
-        usuario_id,
-        conteudo,
-        tema,
-        sentimento,
-        imagem,
-        tipo_arquivo,
-        nome_arquivo
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING *
-      `,
-      [
-        req.usuario.id,
-        conteudo || "",
-        tema || "Geral",
-        sentimento || "",
-        imagem,
-        tipoArquivo,
-        nomeArquivo,
-      ],
-    );
-
-    const postCompleto = await pool.query(
-      `
-      SELECT 
-        p.*,
-        u.nome,
-        u.foto,
-        0 AS total_curtidas,
-        0 AS total_comentarios,
-        0 AS total_compartilhamentos,
-        false AS curtiu
-      FROM posts p
-      JOIN usuarios u ON u.id = p.usuario_id
-      WHERE p.id = $1
-      `,
-      [novo.rows[0].id],
-    );
+    const post = await postService.createPost({ usuarioId: req.usuario.id, conteudo: texto, tema: tema || "Geral", sentimento: sentimento || "", imagem, tipoArquivo, nomeArquivo }, req.usuario.id);
 
     res.status(201).json({
       mensagem: "Post criado com sucesso!",
-      post: postCompleto.rows[0],
+      post,
     });
   } catch (error) {
-    console.error("❌ Erro ao criar post:", error.message);
-
+    try { await removerArquivoArmazenado(imagem); } catch { console.error("Falha ao compensar mídia de post."); }
+    console.error("❌ Erro ao criar post:", error.code || error.name);
     res.status(500).json({
       erro: "Erro ao criar post.",
-      detalhe: error.message,
     });
   }
 });
@@ -947,38 +833,28 @@ app.put("/posts/:id", autenticar, async (req, res) => {
     const { id } = req.params;
     const { conteudo, tema, sentimento } = req.body;
 
-    const post = await pool.query("SELECT * FROM posts WHERE id = $1", [id]);
-
-    if (post.rows.length === 0) {
+    const postId = Number(id);
+    if (!Number.isInteger(postId) || postId <= 0) return res.status(400).json({ erro: "Post inválido." });
+    const owned = await postService.findOwned(postId, req.usuario.id);
+    if (owned.status === "not_found") {
       return res.status(404).json({ erro: "Post não encontrado." });
     }
 
-    if (Number(post.rows[0].usuario_id) !== Number(req.usuario.id)) {
+    if (owned.status === "forbidden") {
       return res.status(403).json({ erro: "Você não pode editar este post." });
     }
 
-    if (conteudo !== undefined && bloquearSeNecessario(conteudo, res)) {
+    const texto = conteudo === undefined ? owned.post.conteudo : String(conteudo).trim();
+    if (!texto && !owned.post.imagem) return res.status(400).json({ erro: "O post precisa de texto ou mídia." });
+    if (conteudo !== undefined && bloquearSeNecessario(texto, res)) {
       return;
     }
 
-    const atualizado = await pool.query(
-      `
-      UPDATE posts
-      SET conteudo = $1, tema = $2, sentimento = $3, atualizado_em = NOW()
-      WHERE id = $4
-      RETURNING *
-      `,
-      [
-        conteudo ?? post.rows[0].conteudo,
-        tema ?? post.rows[0].tema,
-        sentimento ?? post.rows[0].sentimento,
-        id,
-      ],
-    );
+    const atualizado = await postService.updatePost(postId, { conteudo: texto, tema: tema ?? owned.post.tema, sentimento: sentimento ?? owned.post.sentimento }, req.usuario.id);
 
     res.json({
       mensagem: "Post editado com sucesso!",
-      post: atualizado.rows[0],
+      post: atualizado,
     });
   } catch (error) {
     console.error("❌ Erro ao editar post:", error.message);
@@ -992,17 +868,19 @@ app.delete("/posts/:id", autenticar, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const post = await pool.query("SELECT * FROM posts WHERE id = $1", [id]);
-
-    if (post.rows.length === 0) {
+    const postId = Number(id);
+    if (!Number.isInteger(postId) || postId <= 0) return res.status(400).json({ erro: "Post inválido." });
+    const owned = await postService.findOwned(postId, req.usuario.id);
+    if (owned.status === "not_found") {
       return res.status(404).json({ erro: "Post não encontrado." });
     }
 
-    if (Number(post.rows[0].usuario_id) !== Number(req.usuario.id)) {
+    if (owned.status === "forbidden") {
       return res.status(403).json({ erro: "Você não pode excluir este post." });
     }
 
-    await pool.query("DELETE FROM posts WHERE id = $1", [id]);
+    await postService.deletePost(postId);
+    try { await removerArquivoArmazenado(owned.post.imagem); } catch { console.error("Falha ao remover mídia órfã; retry manual necessário."); }
 
     res.json({ mensagem: "Post excluído com sucesso!" });
   } catch (error) {
@@ -1274,11 +1152,7 @@ app.post("/denuncias", autenticar, async (req, res) => {
     }
 
     if (postId) {
-      const post = await pool.query("SELECT id FROM posts WHERE id = $1", [
-        postId,
-      ]);
-
-      if (post.rows.length === 0) {
+      if (!(await postService.postExists(postId))) {
         return res.status(404).json({ erro: "Post não encontrado." });
       }
     }
@@ -1356,6 +1230,19 @@ app.get("/conversas", autenticar, async (req, res) => {
   } catch (error) {
     console.error("Erro ao buscar conversas:", error.message);
     res.status(500).json({ erro: "Erro ao buscar conversas." });
+  }
+});
+
+app.get("/posts/:id", autenticar, async (req, res) => {
+  const postId = socialService.parsePositiveId(req.params.id);
+  if (!postId) return res.status(400).json({ erro: "Post inválido." });
+  try {
+    const post = await postService.getPost(postId, req.usuario.id);
+    if (!post) return res.status(404).json({ erro: "Post não encontrado." });
+    return res.json({ post });
+  } catch (error) {
+    console.error("Erro ao buscar post:", error.message);
+    return res.status(500).json({ erro: "Erro ao buscar post." });
   }
 });
 
@@ -1565,30 +1452,12 @@ app.get("/perfil/stats/:id", autenticar, async (req, res) => {
 app.get("/usuarios/:id/posts", autenticar, async (req, res) => {
   try {
     const usuarioId = Number(req.params.id);
-
-    const posts = await pool.query(
-      `
-      SELECT
-        p.*,
-        u.nome,
-        u.foto,
-        COALESCE((SELECT COUNT(*) FROM curtidas WHERE post_id = p.id), 0) AS total_curtidas,
-        COALESCE((SELECT COUNT(*) FROM comentarios WHERE post_id = p.id), 0) AS total_comentarios,
-        COALESCE((SELECT COUNT(*) FROM compartilhamentos WHERE post_id = p.id), 0) AS total_compartilhamentos,
-        EXISTS (
-          SELECT 1 FROM curtidas 
-          WHERE curtidas.post_id = p.id 
-          AND curtidas.usuario_id = $2
-        ) AS curtiu
-      FROM posts p
-      JOIN usuarios u ON u.id = p.usuario_id
-      WHERE p.usuario_id = $1
-      ORDER BY p.criado_em DESC
-      `,
-      [usuarioId, req.usuario.id],
-    );
-
-    res.json(posts.rows);
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) return res.status(400).json({ erro: "Usuário inválido." });
+    const usuario = await userService.findPublicProfile(usuarioId);
+    if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado." });
+    const page = await postService.listPosts({ viewerId: req.usuario.id, userId: usuarioId, limit: req.query.limit, cursor: req.query.cursor });
+    if (page.status === "invalid_cursor") return res.status(400).json({ erro: "Cursor inválido." });
+    res.json({ items: page.items, nextCursor: page.nextCursor });
   } catch (error) {
     console.error("❌ Erro ao buscar posts do perfil:", error.message);
     res.status(500).json({ erro: "Erro ao buscar posts." });
@@ -1664,6 +1533,88 @@ app.post("/seguir/:id", autenticar, async (req, res) => {
 });
 
 /* ================= CRIAR GRUPO ================= */
+
+/* ================= API SOCIAL REST ================= */
+
+app.post("/posts/:id/like", autenticar, async (req, res) => {
+  const postId = socialService.parsePositiveId(req.params.id);
+  if (!postId) return res.status(400).json({ erro: "Post inválido." });
+  try {
+    const result = await socialService.toggleLike(req.usuario.id, postId);
+    if (result.status === "not_found") return res.status(404).json({ erro: "Post não encontrado." });
+    return res.json({ mensagem: result.curtiu ? "Post curtido." : "Curtida removida.", curtiu: result.curtiu });
+  } catch (error) {
+    console.error("Erro ao atualizar curtida:", error.message);
+    return res.status(500).json({ erro: "Erro ao atualizar curtida." });
+  }
+});
+
+app.post("/posts/:id/share", autenticar, async (req, res) => {
+  const postId = socialService.parsePositiveId(req.params.id);
+  if (!postId) return res.status(400).json({ erro: "Post inválido." });
+  try {
+    const result = await socialService.share(req.usuario.id, postId);
+    if (result.status === "not_found") return res.status(404).json({ erro: "Post não encontrado." });
+    if (result.status === "duplicate") return res.status(409).json({ erro: "Você já compartilhou esta publicação." });
+    return res.status(201).json({ mensagem: "Compartilhamento registrado com sucesso!" });
+  } catch (error) {
+    console.error("Erro ao compartilhar:", error.message);
+    return res.status(500).json({ erro: "Erro ao compartilhar." });
+  }
+});
+
+app.post("/users/:id/follow", autenticar, async (req, res) => {
+  const targetId = socialService.parsePositiveId(req.params.id);
+  if (!targetId) return res.status(400).json({ erro: "Usuário inválido." });
+  try {
+    const result = await socialService.toggleFollow(req.usuario.id, targetId);
+    if (result.status === "self") return res.status(400).json({ erro: "Você não pode seguir você mesmo." });
+    if (result.status === "not_found") return res.status(404).json({ erro: "Usuário não encontrado." });
+    return res.json({ mensagem: result.seguindo ? "Você começou a seguir este usuário." : "Você deixou de seguir este usuário.", seguindo: result.seguindo });
+  } catch (error) {
+    console.error("Erro ao seguir usuário:", error.message);
+    return res.status(500).json({ erro: "Erro ao seguir usuário." });
+  }
+});
+
+app.get("/search", autenticar, async (req, res) => {
+  const query = String(req.query.q || "").trim().slice(0, 100);
+  const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 50);
+  const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
+  if (query.length < 2) return res.status(400).json({ erro: "Digite pelo menos 2 caracteres." });
+  try {
+    const [users, posts] = await prisma.$transaction([
+      prisma.usuario.findMany({ where: { OR: [{ nome: { contains: query, mode: "insensitive" } }, { bio: { contains: query, mode: "insensitive" } }] }, skip: offset, take: limit, select: { id: true, nome: true, foto: true, bio: true } }),
+      prisma.post.findMany({ where: { conteudo: { contains: query, mode: "insensitive" } }, orderBy: [{ criadoEm: "desc" }, { id: "desc" }], skip: offset, take: limit, select: { id: true, conteudo: true, tema: true, criadoEm: true, usuario: { select: { id: true, nome: true, foto: true } } } }),
+    ]);
+    return res.json({ users, posts, nextOffset: users.length === limit || posts.length === limit ? offset + limit : null });
+  } catch (error) {
+    console.error("Erro na pesquisa:", error.message);
+    return res.status(500).json({ erro: "Erro ao pesquisar." });
+  }
+});
+
+app.get("/notifications", autenticar, async (req, res) => {
+  try {
+    return res.json(await socialService.listNotifications(req.usuario.id, req.query.limit));
+  } catch (error) {
+    console.error("Erro ao listar notificações:", error.message);
+    return res.status(500).json({ erro: "Erro ao listar notificações." });
+  }
+});
+
+app.patch("/notifications/:id/read", autenticar, async (req, res) => {
+  const id = socialService.parsePositiveId(req.params.id);
+  if (!id) return res.status(400).json({ erro: "Notificação inválida." });
+  const updated = await prisma.notificacao.updateMany({ where: { id, destinatarioId: req.usuario.id }, data: { lidaEm: new Date() } });
+  if (!updated.count) return res.status(404).json({ erro: "Notificação não encontrada." });
+  return res.json({ mensagem: "Notificação marcada como lida." });
+});
+
+app.patch("/notifications/read-all", autenticar, async (req, res) => {
+  const updated = await prisma.notificacao.updateMany({ where: { destinatarioId: req.usuario.id, lidaEm: null }, data: { lidaEm: new Date() } });
+  return res.json({ mensagem: "Notificações marcadas como lidas.", atualizadas: updated.count });
+});
 
 app.post("/api/grupos", autenticar, async (req, res) => {
   try {

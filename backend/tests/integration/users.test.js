@@ -26,7 +26,7 @@ describe("API de usuarios migrada para Prisma", () => {
     });
     const response = await request(app)
       .get(`/usuarios/${other.id}`)
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
 
     expect(response.body).toMatchObject({
@@ -39,7 +39,7 @@ describe("API de usuarios migrada para Prisma", () => {
 
   it("retorna 404 para perfil publico inexistente", async () => {
     const viewer = await createTestUser();
-    await request(app).get("/usuarios/999999").set(authHeader(viewer)).expect(404);
+    await request(app).get("/usuarios/999999").set(await authHeader(viewer)).expect(404);
   });
 
   it("nunca retorna email, hash ou google_id no perfil publico", async () => {
@@ -47,7 +47,7 @@ describe("API de usuarios migrada para Prisma", () => {
     const other = await createTestUser({ googleId: "private-google-id" });
     const response = await request(app)
       .get(`/usuarios/${other.id}`)
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
     expectNoPrivateUserFields(response.body);
   });
@@ -56,18 +56,18 @@ describe("API de usuarios migrada para Prisma", () => {
     const user = await createTestUser({ googleId: "private-google-id" });
     const response = await request(app)
       .get("/me")
-      .set(authHeader(user))
+      .set(await authHeader(user))
       .expect(200);
 
-    expect(response.body.email).toBe(user.email);
-    expectNoPrivateUserFields(response.body, { allowEmail: true });
+    expect(response.body.usuario.email).toBe(user.email);
+    expectNoPrivateUserFields(response.body.usuario, { allowEmail: true });
   });
 
   it("edita o perfil preservando o contrato privado e sem expor segredos", async () => {
     const user = await createTestUser({ googleId: "private-google-id" });
     const response = await request(app)
       .put("/perfil")
-      .set(authHeader(user))
+      .set(await authHeader(user))
       .field("nome", "Nome Atualizado")
       .field("bio", "Bio atualizada")
       .expect(200);
@@ -85,7 +85,7 @@ describe("API de usuarios migrada para Prisma", () => {
     const user = await createTestUser();
     await request(app)
       .delete("/conta")
-      .set(authHeader(user))
+      .set(await authHeader(user))
       .send({ motivo: "Fixture de exclusao" })
       .expect(200);
 
@@ -108,7 +108,7 @@ describe("API de usuarios migrada para Prisma", () => {
     for (let index = 0; index < 22; index += 1) await createTestUser();
     const response = await request(app)
       .get("/usuarios/sugestoes")
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
 
     expect(response.body).toHaveLength(20);
@@ -121,7 +121,7 @@ describe("API de usuarios migrada para Prisma", () => {
     await createTestFollow(follower.id, viewer.id);
     const response = await request(app)
       .get("/usuarios/seguidores")
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
 
     expect(response.body[0].id).toBe(follower.id);
@@ -134,7 +134,7 @@ describe("API de usuarios migrada para Prisma", () => {
     await createTestFollow(viewer.id, followed.id);
     const response = await request(app)
       .get("/usuarios/seguindo")
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
 
     expect(response.body[0]).toMatchObject({ id: followed.id, seguindo: true });
@@ -150,7 +150,7 @@ describe("API de usuarios migrada para Prisma", () => {
     });
     const response = await request(app)
       .get("/usuarios/online")
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
 
     expect(response.body[0]).toMatchObject({ id: online.id, online: true });
@@ -166,10 +166,10 @@ describe("API de usuarios migrada para Prisma", () => {
     );
     const response = await request(app)
       .get("/posts")
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
-    expect(response.body[0].nome).toBe(author.nome);
-    expectNoPrivateUserFields(response.body);
+    expect(response.body.items[0].nome).toBe(author.nome);
+    expectNoPrivateUserFields(response.body.items);
   });
 
   it("posts do perfil nao retornam email do autor", async () => {
@@ -181,10 +181,10 @@ describe("API de usuarios migrada para Prisma", () => {
     );
     const response = await request(app)
       .get(`/usuarios/${author.id}/posts`)
-      .set(authHeader(viewer))
+      .set(await authHeader(viewer))
       .expect(200);
-    expect(response.body[0].nome).toBe(author.nome);
-    expectNoPrivateUserFields(response.body);
+    expect(response.body.items[0].nome).toBe(author.nome);
+    expectNoPrivateUserFields(response.body.items);
   });
 
   it("recusa usuario nao autenticado nos endpoints privados", async () => {

@@ -38,8 +38,28 @@ model Usuario {
   solicitacoesGrupo  GrupoSolicitacao[]
   denunciasFeitas    Denuncia[]         @relation("Denunciante")
   denunciasRecebidas Denuncia[]         @relation("UsuarioDenunciado")
+  sessoes            Session[]
+  notificacoes       Notificacao[]      @relation("NotificacaoDestinatario")
+  notificacoesCriadas Notificacao[]     @relation("NotificacaoAtor")
 
   @@map("usuarios")
+}
+
+model Session {
+  id            Int       @id @default(autoincrement())
+  usuarioId     Int       @map("usuario_id")
+  tokenHash     String    @unique @map("token_hash") @db.Char(64)
+  criadoEm      DateTime  @default(now()) @map("criado_em") @db.Timestamp(6)
+  ultimoUsoEm   DateTime? @map("ultimo_uso_em") @db.Timestamp(6)
+  expiraEm      DateTime  @map("expira_em") @db.Timestamp(6)
+  revogadoEm    DateTime? @map("revogado_em") @db.Timestamp(6)
+  userAgent     String?   @map("user_agent") @db.VarChar(300)
+  usuario       Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId], map: "idx_sessoes_usuario_id")
+  @@index([expiraEm], map: "idx_sessoes_expira_em")
+  @@index([revogadoEm], map: "idx_sessoes_revogado_em")
+  @@map("sessoes")
 }
 
 model ExclusaoConta {
@@ -72,6 +92,7 @@ model Post {
   curtidas          Curtida[]
   compartilhamentos Compartilhamento[]
   denuncias         Denuncia[]
+  notificacoes      Notificacao[]
 
   @@index([usuarioId], map: "idx_posts_usuario_id")
   @@index([criadoEm(sort: Desc)], map: "idx_posts_criado_em")
@@ -130,7 +151,26 @@ model Compartilhamento {
 
   @@index([postId], map: "idx_compartilhamentos_post_id")
   @@index([usuarioId], map: "idx_compartilhamentos_usuario_id")
+  @@unique([usuarioId, postId])
   @@map("compartilhamentos")
+}
+
+model Notificacao {
+  id             Int       @id @default(autoincrement())
+  destinatarioId Int       @map("destinatario_id")
+  atorId         Int?      @map("ator_id")
+  tipo           String    @db.VarChar(30)
+  mensagem       String    @db.VarChar(240)
+  postId         Int?      @map("post_id")
+  lidaEm         DateTime? @map("lida_em") @db.Timestamp(6)
+  criadoEm       DateTime  @default(now()) @map("criado_em") @db.Timestamp(6)
+  destinatario   Usuario   @relation("NotificacaoDestinatario", fields: [destinatarioId], references: [id], onDelete: Cascade)
+  ator           Usuario?  @relation("NotificacaoAtor", fields: [atorId], references: [id], onDelete: SetNull)
+  post           Post?     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([destinatarioId, lidaEm, criadoEm(sort: Desc)], map: "idx_notificacoes_caixa_entrada")
+  @@index([postId], map: "idx_notificacoes_post_id")
+  @@map("notificacoes")
 }
 
 model Denuncia {

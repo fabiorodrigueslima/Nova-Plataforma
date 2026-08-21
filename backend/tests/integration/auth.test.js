@@ -31,6 +31,9 @@ describe("autenticacao migrada para Prisma", () => {
   beforeEach(resetTestDatabase);
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_FROM;
     await resetTestDatabase();
   });
   afterAll(async () => {
@@ -222,6 +225,24 @@ describe("autenticacao migrada para Prisma", () => {
       .send({ email: "missing@test.local" })
       .expect(200);
     expect(existing.body).toEqual(missing.body);
+  });
+
+  it("envia recuperação pela API HTTPS do Resend quando configurada", async () => {
+    await createPasswordUser({ email: "resend@test.local" });
+    process.env.RESEND_API_KEY = "re_test_key";
+    process.env.EMAIL_FROM = "PostFan <no-reply@postfan.test>";
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await request(app).post("/recuperar").send({ email: "resend@test.local" }).expect(200);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.resend.com/emails");
+    expect(options.headers.Authorization).toBe("Bearer re_test_key");
+    const payload = JSON.parse(options.body);
+    expect(payload.to).toEqual(["resend@test.local"]);
+    expect(payload.html).toContain("/resetar-senha#token=");
   });
 
   it("falha SMTP nao revela que a conta existe", async () => {

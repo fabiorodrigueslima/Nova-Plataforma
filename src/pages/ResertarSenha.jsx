@@ -65,20 +65,28 @@ export default function ResetarSenha() {
                 <p>Crie uma nova senha para sua conta.</p>
 
                 <form onSubmit={resetarSenha}>
-                    <label>Nova senha</label>
+                    <label htmlFor="new-password">Nova senha</label>
                     <input
+                        id="new-password"
                         type="password"
                         placeholder="Digite sua nova senha"
                         value={senha}
                         onChange={(e) => setSenha(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={6}
+                        required
                     />
 
-                    <label>Confirmar senha</label>
+                    <label htmlFor="confirm-password">Confirmar senha</label>
                     <input
+                        id="confirm-password"
                         type="password"
                         placeholder="Confirme sua nova senha"
                         value={confirmarSenha}
                         onChange={(e) => setConfirmarSenha(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={6}
+                        required
                     />
 
                     {erro && <div className="auth-error">{erro}</div>}

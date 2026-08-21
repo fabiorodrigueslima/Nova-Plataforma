@@ -87,6 +87,20 @@ Cada teste de banco limpa e recria apenas suas proprias fixtures ficticias (`@te
 - O login Google depende de `GOOGLE_CLIENT_ID` no backend e `VITE_GOOGLE_CLIENT_ID` no frontend.
 - Nunca publique arquivos `.env` reais no Git.
 
+### Recuperação de senha
+
+Em desenvolvimento local, o backend pode usar SMTP com `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USER` e `EMAIL_PASS`. Para Gmail, use uma senha de app.
+
+No Render gratuito, configure o envio HTTPS pelo Resend:
+
+```env
+RESEND_API_KEY=re_...
+EMAIL_FROM=PostFan <contato@seu-dominio.com>
+FRONTEND_URL=https://seu-servico.onrender.com
+```
+
+O domínio usado em `EMAIL_FROM` precisa estar verificado no Resend. O link expira em uma hora, funciona uma única vez e o token é armazenado somente como hash no banco.
+
 ## Publicação
 
 O repositório inclui `render.yaml` para a aplicação completa e `vercel.json` para o frontend. Antes de iniciar uma versão nova no Render, aplique `cd backend && npm run prisma:migrate:deploy` com a `DATABASE_URL` de produção. Configure também `SESSION_SECRET`, `FRONTEND_URL`, credenciais opcionais de Google/SMTP e Cloudinary. O endpoint de saúde é `/healthz`; o processo de inicialização não altera a estrutura do banco.

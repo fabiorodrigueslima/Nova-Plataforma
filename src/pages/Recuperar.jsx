@@ -31,9 +31,7 @@ export default function Recuperar() {
                 { timeout: 60000 },
             );
 
-            setMensagem(
-                "Enviamos um link de recuperação para seu email. Use o link mais recente e verifique também a caixa de spam.",
-            );
+            setMensagem("Se o email estiver cadastrado, você receberá um link em alguns instantes. Verifique também a caixa de spam.");
             setEmail("");
         } catch (error) {
             if (error.code === "ECONNABORTED") {
@@ -72,12 +70,15 @@ export default function Recuperar() {
 
                     <p className="recover-subtitle">Digite o email da sua conta.</p>
 
-                    <label>E-mail</label>
+                    <label htmlFor="recovery-email">E-mail</label>
                     <input
+                        id="recovery-email"
                         type="email"
                         placeholder="Digite seu email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        autoComplete="email"
+                        required
                     />
 
                     {erro && <div className="erro-msg">{erro}</div>}

@@ -38,9 +38,11 @@ Se voce trocar o OAuth Client no Google Cloud, atualize esses dois valores no pa
 Para recuperacao de senha por email, adicione depois no painel do Render:
 
 ```env
-EMAIL_USER=seu-email@gmail.com
-EMAIL_PASS=sua-senha-de-app-google
+RESEND_API_KEY=re_sua-chave
+EMAIL_FROM=PostFan <contato@seu-dominio.com>
 ```
+
+O plano gratuito bloqueia SMTP. Use um dominio verificado no Resend e mantenha `FRONTEND_URL` com a URL publica exata do PostFan.
 
 Recomendadas para uploads em producao:
 

@@ -1,25 +1,18 @@
 const path = require("path");
 
+// Segredos do servidor pertencem exclusivamente ao backend/.env.
+// Em produção, variáveis fornecidas pelo Render continuam tendo prioridade.
 require("dotenv").config({
-  path: path.resolve(__dirname, "../.env.local"),
+  path: path.resolve(__dirname, ".env"),
   override: false,
   quiet: true,
 });
-
-require("dotenv").config({
-  path: path.resolve(__dirname, "../.env"),
-  override: false,
-  quiet: true,
-});
-
-require("dotenv").config({ quiet: true });
 
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcrypt");
-const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const multer = require("multer");
 const fs = require("fs");
@@ -31,6 +24,7 @@ const authService = require("./src/modules/auth/auth.service");
 const { normalizeEmail } = require("./src/modules/auth/email");
 const googleVerifier = require("./src/modules/auth/google-verifier");
 const sessionService = require("./src/modules/auth/session.service");
+const recoveryEmailService = require("./src/modules/auth/recovery-email.service");
 const postService = require("./src/modules/posts/post.service");
 const socialService = require("./src/modules/social/social.service");
 const prisma = require("./src/lib/prisma");
@@ -562,22 +556,16 @@ app.post("/recuperar", async (req, res) => {
   try {
     const { email } = req.body;
     const emailNormalizado = normalizeEmail(email);
-    const emailUser = process.env.EMAIL_USER;
-    const emailPass = process.env.EMAIL_PASS;
-    const emailHost = process.env.EMAIL_HOST || "smtp.gmail.com";
-    const emailPort = Number(process.env.EMAIL_PORT || 587);
-    const emailSecure =
-      process.env.EMAIL_SECURE === "true" || emailPort === 465;
 
     if (!emailNormalizado) {
       return res.status(400).json({ erro: "Digite seu email." });
     }
 
-    if (!emailUser || !emailPass) {
-      console.error("EMAIL_USER ou EMAIL_PASS não configurado.");
+    if (!recoveryEmailService.isConfigured()) {
+      console.error("Provedor de email de recuperação não configurado.");
       return res.status(503).json({
         erro:
-          "Recuperação de senha indisponível no momento. Configure o email do servidor.",
+          "Recuperação de senha indisponível. Configure RESEND_API_KEY e EMAIL_FROM no servidor.",
       });
     }
 
@@ -594,42 +582,18 @@ app.post("/recuperar", async (req, res) => {
 
     await authService.createPasswordRecovery(emailNormalizado, token, expira);
 
-    const link = `${obterFrontendUrl(req)}/resetar-senha?token=${encodeURIComponent(
+    const link = `${obterFrontendUrl(req)}/resetar-senha#token=${encodeURIComponent(
       token,
     )}`;
 
-    const transporter = nodemailer.createTransport({
-      host: emailHost,
-      port: emailPort,
-      secure: emailSecure,
-      requireTLS: !emailSecure,
-      connectionTimeout: 20000,
-      greetingTimeout: 20000,
-      socketTimeout: 30000,
-      auth: {
-        user: emailUser,
-        pass: emailPass,
-      },
-    });
-
     try {
-      await transporter.sendMail({
-      from: `"Postfan" <${emailUser}>`,
-      to: emailNormalizado,
-      subject: "Recuperação de senha - Postfan",
-      html: `
-        <div style="font-family: Arial; padding: 20px;">
-          <h2>Recuperar senha</h2>
-          <p>Clique no botão abaixo para criar uma nova senha:</p>
-          <a href="${link}" style="background:#4f46ff;color:white;padding:12px 18px;border-radius:8px;text-decoration:none;">
-            Criar nova senha
-          </a>
-          <p>Este link expira em 1 hora.</p>
-        </div>
-      `,
-      });
+      await recoveryEmailService.sendRecoveryEmail(emailNormalizado, link);
     } catch (error) {
-      console.error("Falha SMTP na recuperacao:", error.code || error.name);
+      if (error.code === "EAUTH") {
+        console.error("Falha no envio da recuperação: Gmail recusou a autenticação. Use uma senha de app de 16 caracteres em EMAIL_PASS.");
+      } else {
+        console.error("Falha no envio da recuperação:", error.code || error.name);
+      }
     }
 
     res.json({ mensagem: RECOVERY_PUBLIC_MESSAGE });

@@ -89,6 +89,8 @@ Build:
 npm run render-build
 ```
 
+Esse comando instala as dependencias, gera o frontend, gera o Prisma Client e aplica com seguranca apenas as migrations pendentes usando `prisma migrate deploy`. Ele nao reseta nem apaga o banco.
+
 Start:
 
 ```bash
@@ -101,3 +103,4 @@ npm start
 - O frontend chamara o backend no mesmo dominio.
 - Para uploads persistentes, use Cloudinary. Sem Cloudinary, arquivos locais podem sumir quando o servico reiniciar.
 - Depois de mudar variaveis de ambiente, faca novo deploy no Render.
+- No plano gratuito, as migrations ficam no comando de build porque o Pre-Deploy Command e exclusivo dos servicos pagos.

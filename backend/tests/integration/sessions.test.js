@@ -35,6 +35,16 @@ describe("sessoes opacas e CSRF", () => {
     await passwordUser(); process.env.NODE_ENV = "production";
     const response = await login(request.agent(app));
     expect(response.headers["set-cookie"][0]).toMatch(/Secure/i);
+    expect(response.headers["set-cookie"][0]).toMatch(/SameSite=None/i);
+  });
+
+  it("aceita a origem segura do aplicativo Android", async () => {
+    await request(app)
+      .options("/login")
+      .set("Origin", "https://localhost")
+      .set("Access-Control-Request-Method", "POST")
+      .expect("Access-Control-Allow-Origin", "https://localhost")
+      .expect(204);
   });
 
   it("banco guarda somente hash do token de sessão", async () => {

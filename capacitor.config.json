@@ -1,0 +1,12 @@
+{
+  "appId": "com.postfan.app",
+  "appName": "PostFan",
+  "webDir": "dist",
+  "server": {
+    "hostname": "localhost",
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

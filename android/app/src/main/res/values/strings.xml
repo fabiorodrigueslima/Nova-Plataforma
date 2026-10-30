@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PostFan</string>
+    <string name="title_activity_main">PostFan</string>
+    <string name="package_name">com.postfan.app</string>
+    <string name="custom_url_scheme">com.postfan.app</string>
+</resources>

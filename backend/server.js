@@ -82,6 +82,9 @@ const allowedOrigins = [
   "https://5a06890e--postfan-novo.netlify.app",
 
   "https://postfan-novo-7opc.vercel.app",
+
+  // Origem local segura usada pelo aplicativo Android (Capacitor).
+  "https://localhost",
 ];
 
 if (process.env.FRONTEND_URL) {
@@ -304,6 +307,12 @@ function obterFrontendUrl(req) {
   const host = req.get("host");
   const forwardedProto = req.get("x-forwarded-proto");
 
+  // Links enviados por email devem abrir o site público, não o endereço
+  // interno da WebView do aplicativo.
+  if (origin === "https://localhost") {
+    return FRONTEND_URL;
+  }
+
   if (origin && allowedOrigins.includes(origin)) {
     return origin;
   }
@@ -327,7 +336,16 @@ function obterFrontendUrl(req) {
 }
 
 function cookieOptions(expires) {
-  return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", expires };
+  const production = process.env.NODE_ENV === "production";
+  return {
+    httpOnly: true,
+    secure: production,
+    // O app Android acessa a API publicada a partir de https://localhost.
+    // SameSite=None + Secure permite a sessão nesse cenário sem expor o token ao JavaScript.
+    sameSite: production ? "none" : "lax",
+    path: "/",
+    expires,
+  };
 }
 
 function readCookie(req, name) {

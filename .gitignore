@@ -30,3 +30,5 @@ backend/.env.test
 .env-example
 .env*.local
 backend/uploads/
+
+.env.mobile

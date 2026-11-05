@@ -299,7 +299,16 @@ async function salvarArquivoEnviado(file, folder = "postfan/uploads") {
   if (!file) return null;
 
   if (usaCloudinary) {
-    const result = await uploadCloudinary(file, folder);
+    let result;
+    try {
+      result = await uploadCloudinary(file, folder);
+    } catch (error) {
+      // Mensagens do Cloudinary não contêm a chave secreta; ajudam a achar credencial errada.
+      console.error("❌ Falha no upload para o Cloudinary:", error?.http_code || "", error?.message || error?.name);
+      const falha = new Error("Falha ao enviar mídia.");
+      falha.code = "UPLOAD_FAILED";
+      throw falha;
+    }
 
     return {
       url: result.secure_url,
@@ -911,7 +920,10 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
     });
   } catch (error) {
     try { await removerArquivoArmazenado(imagem); } catch { console.error("Falha ao compensar mídia de post."); }
-    console.error("❌ Erro ao criar post:", error.code || error.name);
+    console.error("❌ Erro ao criar post:", error.code || error.name, error.message);
+    if (error.code === "UPLOAD_FAILED") {
+      return res.status(502).json({ erro: "Não foi possível enviar a mídia agora. Tente novamente em instantes." });
+    }
     res.status(500).json({
       erro: "Erro ao criar post.",
     });

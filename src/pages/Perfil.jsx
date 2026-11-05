@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
     FiAlertTriangle,
     FiHeart,
+    FiSlash,
     FiMessageCircle,
     FiSend,
     FiShare2,
@@ -506,6 +507,29 @@ export default function Perfil() {
         carregarComentarios(post.id);
     }
 
+    async function alternarBloqueio() {
+        const bloquear = !stats.bloqueado_por_mim;
+        if (bloquear) {
+            const ok = await dialog.confirm({
+                type: "danger",
+                title: `Bloquear ${perfil?.nome || "usuário"}?`,
+                message:
+                    "Vocês deixarão de ver as publicações um do outro, não poderão trocar mensagens nem comentar, e o seguir entre vocês será desfeito. A pessoa não é avisada.",
+                confirmText: "Bloquear",
+                cancelText: "Cancelar",
+            });
+            if (!ok) return;
+        }
+        try {
+            const { data } = await api.post(`/usuarios/${perfilId}/bloquear`);
+            dialog.notify({ type: "success", title: data.bloqueado ? "Usuário bloqueado" : "Usuário desbloqueado", message: data.mensagem });
+            setMensagemAberta(false);
+            carregarPerfil();
+        } catch (error) {
+            dialog.notify({ type: "danger", title: "Não foi possível concluir", message: error.response?.data?.erro || "Tente novamente." });
+        }
+    }
+
     async function denunciarPost(post) {
         const motivo = await dialog.prompt({
             type: "danger",
@@ -659,20 +683,31 @@ export default function Perfil() {
                                     </button>
                                 ) : (
                                     <>
-                                        <button
-                                            onClick={() => setMensagemAberta(true)}
-                                            className="btn-mensagem-pro"
-                                        >
-                                            <FiSend aria-hidden="true" /> Mensagem
-                                        </button>
+                                        {!stats.bloqueado_por_mim && (
+                                            <>
+                                                <button
+                                                    onClick={() => setMensagemAberta(true)}
+                                                    className="btn-mensagem-pro"
+                                                >
+                                                    <FiSend aria-hidden="true" /> Mensagem
+                                                </button>
+
+                                                <button
+                                                    onClick={seguirUsuario}
+                                                    className={stats.seguindo ? "btn-seguindo-pro" : "btn-seguir-pro"}
+                                                >
+                                                    {stats.seguindo ? "Seguindo" : "Seguir"}
+                                                </button>
+                                            </>
+                                        )}
 
                                         <button
-                                            onClick={seguirUsuario}
-                                            className={stats.seguindo ? "btn-seguindo-pro" : "btn-seguir-pro"}
+                                            onClick={alternarBloqueio}
+                                            className={stats.bloqueado_por_mim ? "btn-desbloquear-pro" : "btn-bloquear-pro"}
+                                            title={stats.bloqueado_por_mim ? "Desbloquear usuário" : "Bloquear usuário"}
                                         >
-                                            {stats.seguindo ? "Seguindo" : "Seguir"}
+                                            <FiSlash aria-hidden="true" /> {stats.bloqueado_por_mim ? "Desbloquear" : "Bloquear"}
                                         </button>
-
                                     </>
                                 )}
                             </div>

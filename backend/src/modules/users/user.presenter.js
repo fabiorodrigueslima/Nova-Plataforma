@@ -13,7 +13,7 @@ function presentPublicUser(user) {
 }
 
 function presentPrivateUser(user) {
-  return { ...presentPublicUser(user), email: user.email };
+  return { ...presentPublicUser(user), email: user.email, papel: user.papel };
 }
 
 function presentUserCard(user, following) {

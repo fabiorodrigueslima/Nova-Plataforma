@@ -8,53 +8,59 @@ datasource db {
 }
 
 model Usuario {
-  id                 Int                @id @default(autoincrement())
-  nome               String             @db.VarChar(150)
-  email              String             @unique @db.VarChar(150)
-  senha              String?
-  googleId           String?            @unique @map("google_id")
-  provider           String             @default("local") @db.VarChar(30)
-  foto               String?
-  bio                String?
-  essenciaRepresenta String?            @map("essencia_representa")
-  essenciaTema       String?            @map("essencia_tema")
-  essenciaFrase      String?            @map("essencia_frase")
-  abertoPara         String?            @map("aberto_para")
-  ultimoAcesso       DateTime?          @map("ultimo_acesso") @db.Timestamp(6)
-  tokenRecuperacao   String?            @map("token_recuperacao")
-  tokenExpira        DateTime?          @map("token_expira") @db.Timestamp(6)
-  criadoEm           DateTime           @default(now()) @map("criado_em") @db.Timestamp(6)
-  posts              Post[]
-  comentarios        Comentario[]
-  curtidas           Curtida[]
-  compartilhamentos  Compartilhamento[]
-  seguindo           Seguidor[]         @relation("UsuarioSeguidor")
-  seguidores         Seguidor[]         @relation("UsuarioSeguindo")
-  mensagensEnviadas  MensagemPrivada[]  @relation("MensagemRemetente")
-  mensagensRecebidas MensagemPrivada[]  @relation("MensagemDestinatario")
-  gruposCriados      Grupo[]
-  gruposComoMembro   GrupoMembro[]
-  mensagensEmGrupos  GrupoMensagem[]
-  solicitacoesGrupo  GrupoSolicitacao[]
-  denunciasFeitas    Denuncia[]         @relation("Denunciante")
-  denunciasRecebidas Denuncia[]         @relation("UsuarioDenunciado")
-  sessoes            Session[]
-  notificacoes       Notificacao[]      @relation("NotificacaoDestinatario")
-  notificacoesCriadas Notificacao[]     @relation("NotificacaoAtor")
+  id                  Int                @id @default(autoincrement())
+  nome                String             @db.VarChar(150)
+  email               String             @unique @db.VarChar(150)
+  senha               String?
+  googleId            String?            @unique @map("google_id")
+  provider            String             @default("local") @db.VarChar(30)
+  foto                String?
+  bio                 String?
+  essenciaRepresenta  String?            @map("essencia_representa")
+  essenciaTema        String?            @map("essencia_tema")
+  essenciaFrase       String?            @map("essencia_frase")
+  abertoPara          String?            @map("aberto_para")
+  ultimoAcesso        DateTime?          @map("ultimo_acesso") @db.Timestamp(6)
+  papel               String             @default("usuario") @db.VarChar(20)
+  suspensoAte         DateTime?          @map("suspenso_ate") @db.Timestamp(6)
+  suspensoMotivo      String?            @map("suspenso_motivo") @db.VarChar(300)
+  tokenRecuperacao    String?            @map("token_recuperacao")
+  tokenExpira         DateTime?          @map("token_expira") @db.Timestamp(6)
+  criadoEm            DateTime           @default(now()) @map("criado_em") @db.Timestamp(6)
+  posts               Post[]
+  comentarios         Comentario[]
+  curtidas            Curtida[]
+  compartilhamentos   Compartilhamento[]
+  seguindo            Seguidor[]         @relation("UsuarioSeguidor")
+  seguidores          Seguidor[]         @relation("UsuarioSeguindo")
+  mensagensEnviadas   MensagemPrivada[]  @relation("MensagemRemetente")
+  mensagensRecebidas  MensagemPrivada[]  @relation("MensagemDestinatario")
+  gruposCriados       Grupo[]
+  gruposComoMembro    GrupoMembro[]
+  mensagensEmGrupos   GrupoMensagem[]
+  solicitacoesGrupo   GrupoSolicitacao[]
+  denunciasFeitas     Denuncia[]         @relation("Denunciante")
+  denunciasRecebidas  Denuncia[]         @relation("UsuarioDenunciado")
+  sessoes             Session[]
+  notificacoes        Notificacao[]      @relation("NotificacaoDestinatario")
+  notificacoesCriadas Notificacao[]      @relation("NotificacaoAtor")
+  denunciasResolvidas Denuncia[]         @relation("DenunciaModerador")
+  bloqueiosFeitos     Bloqueio[]         @relation("Bloqueador")
+  bloqueiosRecebidos  Bloqueio[]         @relation("Bloqueado")
 
   @@map("usuarios")
 }
 
 model Session {
-  id            Int       @id @default(autoincrement())
-  usuarioId     Int       @map("usuario_id")
-  tokenHash     String    @unique @map("token_hash") @db.Char(64)
-  criadoEm      DateTime  @default(now()) @map("criado_em") @db.Timestamp(6)
-  ultimoUsoEm   DateTime? @map("ultimo_uso_em") @db.Timestamp(6)
-  expiraEm      DateTime  @map("expira_em") @db.Timestamp(6)
-  revogadoEm    DateTime? @map("revogado_em") @db.Timestamp(6)
-  userAgent     String?   @map("user_agent") @db.VarChar(300)
-  usuario       Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  id          Int       @id @default(autoincrement())
+  usuarioId   Int       @map("usuario_id")
+  tokenHash   String    @unique @map("token_hash") @db.Char(64)
+  criadoEm    DateTime  @default(now()) @map("criado_em") @db.Timestamp(6)
+  ultimoUsoEm DateTime? @map("ultimo_uso_em") @db.Timestamp(6)
+  expiraEm    DateTime  @map("expira_em") @db.Timestamp(6)
+  revogadoEm  DateTime? @map("revogado_em") @db.Timestamp(6)
+  userAgent   String?   @map("user_agent") @db.VarChar(300)
+  usuario     Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@index([usuarioId], map: "idx_sessoes_usuario_id")
   @@index([expiraEm], map: "idx_sessoes_expira_em")
@@ -149,9 +155,9 @@ model Compartilhamento {
   usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
 
+  @@unique([usuarioId, postId])
   @@index([postId], map: "idx_compartilhamentos_post_id")
   @@index([usuarioId], map: "idx_compartilhamentos_usuario_id")
-  @@unique([usuarioId, postId])
   @@map("compartilhamentos")
 }
 
@@ -174,16 +180,22 @@ model Notificacao {
 }
 
 model Denuncia {
-  id            Int      @id @default(autoincrement())
-  denuncianteId Int?     @map("denunciante_id")
-  usuarioId     Int?     @map("usuario_id")
-  postId        Int?     @map("post_id")
-  motivo        String
-  status        String   @default("pendente") @db.VarChar(50)
-  criadoEm      DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
-  denunciante   Usuario? @relation("Denunciante", fields: [denuncianteId], references: [id], onDelete: SetNull)
-  usuario       Usuario? @relation("UsuarioDenunciado", fields: [usuarioId], references: [id], onDelete: Cascade)
-  post          Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  id                 Int       @id @default(autoincrement())
+  denuncianteId      Int?      @map("denunciante_id")
+  usuarioId          Int?      @map("usuario_id")
+  postId             Int?      @map("post_id")
+  motivo             String
+  status             String    @default("pendente") @db.VarChar(50)
+  // Cópia do conteúdo denunciado: o histórico de moderação sobrevive à remoção do post.
+  conteudoDenunciado String?   @map("conteudo_denunciado")
+  acao               String?   @db.VarChar(30)
+  resolvidoPorId     Int?      @map("resolvido_por_id")
+  resolvidoEm        DateTime? @map("resolvido_em") @db.Timestamp(6)
+  criadoEm           DateTime  @default(now()) @map("criado_em") @db.Timestamp(6)
+  denunciante        Usuario?  @relation("Denunciante", fields: [denuncianteId], references: [id], onDelete: SetNull)
+  usuario            Usuario?  @relation("UsuarioDenunciado", fields: [usuarioId], references: [id], onDelete: Cascade)
+  post               Post?     @relation(fields: [postId], references: [id], onDelete: SetNull)
+  resolvidoPor       Usuario?  @relation("DenunciaModerador", fields: [resolvidoPorId], references: [id], onDelete: SetNull)
 
   @@index([status, criadoEm], map: "idx_denuncias_status_criado_em")
   @@index([usuarioId], map: "idx_denuncias_usuario_id")
@@ -270,4 +282,17 @@ model GrupoSolicitacao {
   @@index([grupoId, status], map: "idx_grupo_solicitacoes_grupo_status")
   @@index([usuarioId], map: "idx_grupo_solicitacoes_usuario_id")
   @@map("grupo_solicitacoes")
+}
+
+model Bloqueio {
+  id           Int      @id @default(autoincrement())
+  bloqueadorId Int      @map("bloqueador_id")
+  bloqueadoId  Int      @map("bloqueado_id")
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  bloqueador   Usuario  @relation("Bloqueador", fields: [bloqueadorId], references: [id], onDelete: Cascade)
+  bloqueado    Usuario  @relation("Bloqueado", fields: [bloqueadoId], references: [id], onDelete: Cascade)
+
+  @@unique([bloqueadorId, bloqueadoId])
+  @@index([bloqueadoId], map: "idx_bloqueios_bloqueado_id")
+  @@map("bloqueios")
 }

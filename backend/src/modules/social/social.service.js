@@ -1,4 +1,5 @@
 const prisma = require("../../lib/prisma");
+const { blockedIdsFor, isBlockedEitherWay } = require("./block.service");
 
 function parsePositiveId(value) {
   const id = Number(value);
@@ -7,6 +8,7 @@ function parsePositiveId(value) {
 
 async function notify({ destinatarioId, atorId, tipo, mensagem, postId = null }) {
   if (destinatarioId === atorId) return;
+  if (await isBlockedEitherWay(destinatarioId, atorId)) return;
   await prisma.notificacao.create({ data: { destinatarioId, atorId, tipo, mensagem, postId } });
 }
 
@@ -34,6 +36,7 @@ async function toggleFollow(seguidorId, seguindoId) {
     await prisma.seguidor.delete({ where: key });
     return { status: "ok", seguindo: false };
   }
+  if (await isBlockedEitherWay(seguidorId, seguindoId)) return { status: "blocked" };
   await prisma.seguidor.create({ data: { seguidorId, seguindoId } });
   await notify({ destinatarioId: seguindoId, atorId: seguidorId, tipo: "seguidor", mensagem: "começou a seguir você." });
   return { status: "ok", seguindo: true };
@@ -53,6 +56,7 @@ async function share(usuarioId, postId) {
 async function createComment(usuarioId, postId, conteudo) {
   const post = await prisma.post.findUnique({ where: { id: postId }, select: { usuarioId: true } });
   if (!post) return null;
+  if (await isBlockedEitherWay(usuarioId, post.usuarioId)) return { status: "blocked" };
   const comment = await prisma.comentario.create({
     data: { usuarioId, postId, conteudo, texto: conteudo },
     select: { id: true, usuarioId: true, postId: true, conteudo: true, criadoEm: true, usuario: { select: { nome: true, foto: true } } },
@@ -73,9 +77,10 @@ function presentComment(comment) {
   };
 }
 
-async function listComments(postId) {
+async function listComments(postId, viewerId) {
+  const bloqueados = await blockedIdsFor(viewerId);
   const rows = await prisma.comentario.findMany({
-    where: { postId },
+    where: { postId, ...(bloqueados.length ? { usuarioId: { notIn: bloqueados } } : {}) },
     orderBy: [{ criadoEm: "asc" }, { id: "asc" }],
     take: 200,
     select: { id: true, usuarioId: true, postId: true, conteudo: true, texto: true, criadoEm: true, usuario: { select: { nome: true, foto: true } } },

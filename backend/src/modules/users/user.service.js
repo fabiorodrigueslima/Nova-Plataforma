@@ -1,4 +1,5 @@
 const prisma = require("../../lib/prisma");
+const { blockedIdsFor } = require("../social/block.service");
 const {
   privateUserSelect,
   publicUserSelect,
@@ -100,8 +101,9 @@ async function deleteAccount(id, reason) {
 }
 
 async function listSuggestions(viewerId) {
+  const bloqueados = await blockedIdsFor(viewerId);
   const users = await prisma.usuario.findMany({
-    where: { id: { not: viewerId } },
+    where: { id: { notIn: [viewerId, ...bloqueados] } },
     orderBy: { id: "desc" },
     take: 20,
     select: cardSelect(viewerId),
@@ -110,9 +112,10 @@ async function listSuggestions(viewerId) {
 }
 
 async function listOnlineUsers(viewerId) {
+  const bloqueados = await blockedIdsFor(viewerId);
   const users = await prisma.usuario.findMany({
     where: {
-      id: { not: viewerId },
+      id: { notIn: [viewerId, ...bloqueados] },
       ultimoAcesso: { gt: new Date(Date.now() - 5 * 60 * 1000) },
     },
     orderBy: { ultimoAcesso: "desc" },

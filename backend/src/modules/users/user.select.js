@@ -13,6 +13,7 @@ const publicUserSelect = Object.freeze({
 const privateUserSelect = Object.freeze({
   ...publicUserSelect,
   email: true,
+  papel: true,
 });
 
 const userCardFields = Object.freeze({

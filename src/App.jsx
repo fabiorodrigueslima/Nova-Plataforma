@@ -21,6 +21,8 @@ import Configuracoes from "./pages/Configuracoes";
 import Mensagens from "./pages/Mensagens";
 import Notificacoes from "./pages/Notificacoes";
 import PrivateRoutes from "./routes/PrivateRoutes";
+import StaffRoute from "./routes/StaffRoute";
+import Moderacao from "./pages/Moderacao";
 
 export default function App() {
   return (
@@ -45,6 +47,7 @@ export default function App() {
         <Route path="/grupo/:id" element={<GrupoChat />} />
         <Route path="/sugestoes" element={<Sugestoes />} />
         <Route path="/explorar" element={<Explorar />} />
+        <Route path="/moderacao" element={<StaffRoute><Moderacao /></StaffRoute>} />
       </Route>
 
 

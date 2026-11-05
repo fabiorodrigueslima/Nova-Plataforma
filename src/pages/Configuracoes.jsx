@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { resolverUrlMidia } from "../utils/mediaUrl";
 import api from "../services/api";
 import { useNotification } from "../context/notificationStore";
 import { useAuth } from "../context/AuthContext";
@@ -8,6 +10,25 @@ export default function Configuracoes() {
   const navigate = useNavigate();
   const dialog = useNotification();
   const { sair: encerrarSessao } = useAuth();
+  const [bloqueados, setBloqueados] = useState([]);
+  const [carregandoBloqueados, setCarregandoBloqueados] = useState(true);
+
+  useEffect(() => {
+    api.get("/bloqueios")
+      .then(({ data }) => setBloqueados(Array.isArray(data) ? data : []))
+      .catch(() => setBloqueados([]))
+      .finally(() => setCarregandoBloqueados(false));
+  }, []);
+
+  async function desbloquear(usuario) {
+    try {
+      await api.post(`/usuarios/${usuario.id}/bloquear`);
+      setBloqueados((lista) => lista.filter((item) => item.id !== usuario.id));
+      dialog.notify({ type: "success", title: "Usuário desbloqueado", message: `${usuario.nome} foi desbloqueado.` });
+    } catch (error) {
+      dialog.notify({ type: "danger", title: "Não foi possível desbloquear", message: error.response?.data?.erro || "Tente novamente." });
+    }
+  }
 
   async function sair() {
     await encerrarSessao();
@@ -91,6 +112,28 @@ export default function Configuracoes() {
             Excluir conta
           </button>
         </div>
+
+        <section className="config-bloqueados" aria-labelledby="titulo-bloqueados">
+          <h2 id="titulo-bloqueados">Usuários bloqueados</h2>
+          <p>Quem você bloqueia não vê suas publicações, não comenta e não manda mensagens para você.</p>
+          {carregandoBloqueados ? (
+            <p className="config-bloqueados-vazio">Carregando...</p>
+          ) : bloqueados.length === 0 ? (
+            <p className="config-bloqueados-vazio">Você não bloqueou ninguém.</p>
+          ) : (
+            <ul>
+              {bloqueados.map((usuario) => (
+                <li key={usuario.id}>
+                  <span className="mod-avatar">
+                    {usuario.foto ? <img src={resolverUrlMidia(usuario.foto)} alt="" /> : usuario.nome?.charAt(0)}
+                  </span>
+                  <strong>{usuario.nome}</strong>
+                  <button type="button" onClick={() => desbloquear(usuario)}>Desbloquear</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </section>
     </main>
   );

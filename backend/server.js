@@ -27,6 +27,8 @@ const sessionService = require("./src/modules/auth/session.service");
 const recoveryEmailService = require("./src/modules/auth/recovery-email.service");
 const postService = require("./src/modules/posts/post.service");
 const socialService = require("./src/modules/social/social.service");
+const blockService = require("./src/modules/social/block.service");
+const moderationService = require("./src/modules/moderation/moderation.service");
 const prisma = require("./src/lib/prisma");
 
 const app = express();
@@ -431,6 +433,18 @@ function clearSessionCookie(res) {
   res.clearCookie(SESSION_COOKIE_NAME, cookieOptions(new Date(0)));
 }
 
+function mensagemSuspensao(suspensoAte) {
+  const data = new Date(suspensoAte).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  return `Sua conta está suspensa até ${data} por violar as regras da comunidade.`;
+}
+
+function exigirEquipe(req, res, next) {
+  if (!moderationService.isStaff(req.usuario?.papel)) {
+    return res.status(403).json({ erro: "Acesso restrito à equipe de moderação." });
+  }
+  return next();
+}
+
 // Grava ultimo_acesso no máximo uma vez por minuto por usuário, em vez de a cada requisição.
 const ultimoAcessoGravado = new Map();
 function registrarAcesso(usuarioId) {
@@ -454,6 +468,9 @@ async function autenticar(req, res, next) {
       if (!sessionService.csrfMatches(req.get("x-csrf-token"), expected)) {
         return res.status(403).json({ erro: "Proteção CSRF inválida." });
       }
+    }
+    if (moderationService.isSuspended(session.usuario) && req.path !== "/logout") {
+      return res.status(403).json({ erro: mensagemSuspensao(session.usuario.suspensoAte), codigo: "CONTA_SUSPENSA" });
     }
     req.usuario = session.usuario;
     req.session = session;
@@ -575,6 +592,10 @@ app.post("/login", async (req, res) => {
       });
     }
 
+    if (moderationService.isSuspended(usuario)) {
+      return res.status(403).json({ autenticado: false, erro: mensagemSuspensao(usuario.suspensoAte), codigo: "CONTA_SUSPENSA" });
+    }
+
     const csrfToken = await issueSession(req, res, usuario.user.id);
 
     res.json({
@@ -628,6 +649,11 @@ app.post("/auth/google", async (req, res) => {
       name: nome,
       photo: foto,
     });
+
+    const suspensao = await prisma.usuario.findUnique({ where: { id: usuario.id }, select: { suspensoAte: true } });
+    if (moderationService.isSuspended(suspensao)) {
+      return res.status(403).json({ autenticado: false, erro: mensagemSuspensao(suspensao.suspensoAte), codigo: "CONTA_SUSPENSA" });
+    }
 
     const csrfToken = await issueSession(req, res, usuario.id);
 
@@ -1018,7 +1044,7 @@ app.get("/comentarios", autenticar, async (req, res) => {
     const postId = socialService.parsePositiveId(req.query.post_id);
     if (!postId) return res.status(400).json({ erro: "post_id é obrigatório." });
     if (!(await postService.postExists(postId))) return res.status(404).json({ erro: "Post não encontrado." });
-    return res.json(await socialService.listComments(postId));
+    return res.json(await socialService.listComments(postId, req.usuario.id));
   } catch (error) {
     console.error("❌ Erro ao buscar comentários:", error.message);
     res.status(500).json({ erro: "Erro ao buscar comentários." });
@@ -1046,6 +1072,7 @@ app.post("/comentarios", autenticar, async (req, res) => {
     }
     const comentario = await socialService.createComment(req.usuario.id, postId, texto);
     if (!comentario) return res.status(404).json({ erro: "Post não encontrado." });
+    if (comentario.status === "blocked") return res.status(403).json({ erro: "Você não pode comentar nesta publicação." });
 
     res.status(201).json({
       mensagem: "Comentário criado com sucesso!",
@@ -1164,40 +1191,23 @@ app.post("/denuncias", autenticar, async (req, res) => {
       return;
     }
 
-    if (postId) {
-      if (!(await postService.postExists(postId))) {
-        return res.status(404).json({ erro: "Post não encontrado." });
-      }
+    if ((post_id && !parseId(post_id)) || (usuario_id && !parseId(usuario_id))) {
+      return res.status(400).json({ erro: "Alvo da denúncia inválido." });
     }
 
-    if (usuarioId) {
-      if (usuarioId === Number(req.usuario.id)) {
-        return res.status(400).json({
-          erro: "Você não pode denunciar seu próprio perfil.",
-        });
-      }
-
-      const usuario = await pool.query("SELECT id FROM usuarios WHERE id = $1", [
-        usuarioId,
-      ]);
-
-      if (usuario.rows.length === 0) {
-        return res.status(404).json({ erro: "Usuário não encontrado." });
-      }
-    }
-
-    const denuncia = await pool.query(
-      `
-      INSERT INTO denuncias (denunciante_id, usuario_id, post_id, motivo)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-      `,
-      [req.usuario.id, usuarioId, postId, motivoDenuncia],
-    );
+    const resultado = await moderationService.createReport({
+      denuncianteId: req.usuario.id,
+      usuarioId,
+      postId,
+      motivo: motivoDenuncia.slice(0, 1000),
+    });
+    if (resultado.status === "post_not_found") return res.status(404).json({ erro: "Post não encontrado." });
+    if (resultado.status === "user_not_found") return res.status(404).json({ erro: "Usuário não encontrado." });
+    if (resultado.status === "self") return res.status(400).json({ erro: "Você não pode denunciar a si mesmo." });
 
     res.status(201).json({
       mensagem: "Denúncia enviada para análise.",
-      denuncia: denuncia.rows[0],
+      denuncia: resultado.denuncia,
     });
   } catch (error) {
     console.error("Erro ao denunciar:", error.message);
@@ -1291,6 +1301,10 @@ app.post("/mensagens", autenticar, async (req, res) => {
 
     if (usuario.rows.length === 0) {
       return res.status(404).json({ erro: "Usuário não encontrado." });
+    }
+
+    if (await blockService.isBlockedEitherWay(req.usuario.id, destinatarioId)) {
+      return res.status(403).json({ erro: "Não é possível enviar mensagem para este usuário." });
     }
 
     const novaMensagem = await pool.query(
@@ -1431,7 +1445,7 @@ app.get("/usuarios/:id", autenticar, async (req, res) => {
 
     const usuario = await userService.findPublicProfile(id);
 
-    if (!usuario) {
+    if (!usuario || (await blockService.hasBlocked(id, req.usuario.id))) {
       return res.status(404).json({ erro: "Usuário não encontrado." });
     }
 
@@ -1457,7 +1471,11 @@ app.get("/perfil/stats/:id", autenticar, async (req, res) => {
         EXISTS (
           SELECT 1 FROM seguidores
           WHERE seguidor_id = $2 AND seguindo_id = $1
-        ) AS seguindo
+        ) AS seguindo,
+        EXISTS (
+          SELECT 1 FROM bloqueios
+          WHERE bloqueador_id = $2 AND bloqueado_id = $1
+        ) AS bloqueado_por_mim
       `,
       [id, req.usuario.id],
     );
@@ -1496,6 +1514,7 @@ app.post("/seguir/:id", autenticar, async (req, res) => {
     if (!socialService.parsePositiveId(seguindo_id)) return res.status(400).json({ erro: "Usuário inválido." });
     const result = await socialService.toggleFollow(seguidor_id, seguindo_id);
     if (result.status === "self") return res.status(400).json({ erro: "Você não pode seguir você mesmo." });
+    if (result.status === "blocked") return res.status(403).json({ erro: "Não é possível seguir este usuário." });
     if (result.status === "not_found") return res.status(404).json({ erro: "Usuário não encontrado." });
     return res.json({ mensagem: result.seguindo ? "Você começou a seguir este usuário." : "Você deixou de seguir este usuário.", seguindo: result.seguindo });
   } catch (error) {
@@ -1544,6 +1563,7 @@ app.post("/users/:id/follow", autenticar, async (req, res) => {
   try {
     const result = await socialService.toggleFollow(req.usuario.id, targetId);
     if (result.status === "self") return res.status(400).json({ erro: "Você não pode seguir você mesmo." });
+    if (result.status === "blocked") return res.status(403).json({ erro: "Não é possível seguir este usuário." });
     if (result.status === "not_found") return res.status(404).json({ erro: "Usuário não encontrado." });
     return res.json({ mensagem: result.seguindo ? "Você começou a seguir este usuário." : "Você deixou de seguir este usuário.", seguindo: result.seguindo });
   } catch (error) {
@@ -1558,9 +1578,11 @@ app.get("/search", autenticar, async (req, res) => {
   const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
   if (query.length < 2) return res.status(400).json({ erro: "Digite pelo menos 2 caracteres." });
   try {
+    const bloqueados = await blockService.blockedIdsFor(req.usuario.id);
+    const semBloqueados = bloqueados.length ? { notIn: bloqueados } : undefined;
     const [users, posts] = await prisma.$transaction([
-      prisma.usuario.findMany({ where: { OR: [{ nome: { contains: query, mode: "insensitive" } }, { bio: { contains: query, mode: "insensitive" } }] }, skip: offset, take: limit, select: { id: true, nome: true, foto: true, bio: true } }),
-      prisma.post.findMany({ where: { conteudo: { contains: query, mode: "insensitive" } }, orderBy: [{ criadoEm: "desc" }, { id: "desc" }], skip: offset, take: limit, select: { id: true, conteudo: true, tema: true, criadoEm: true, usuario: { select: { id: true, nome: true, foto: true } } } }),
+      prisma.usuario.findMany({ where: { ...(semBloqueados ? { id: semBloqueados } : {}), OR: [{ nome: { contains: query, mode: "insensitive" } }, { bio: { contains: query, mode: "insensitive" } }] }, skip: offset, take: limit, select: { id: true, nome: true, foto: true, bio: true } }),
+      prisma.post.findMany({ where: { ...(semBloqueados ? { usuarioId: semBloqueados } : {}), conteudo: { contains: query, mode: "insensitive" } }, orderBy: [{ criadoEm: "desc" }, { id: "desc" }], skip: offset, take: limit, select: { id: true, conteudo: true, tema: true, criadoEm: true, usuario: { select: { id: true, nome: true, foto: true } } } }),
     ]);
     return res.json({ users, posts, nextOffset: users.length === limit || posts.length === limit ? offset + limit : null });
   } catch (error) {
@@ -2131,6 +2153,103 @@ app.delete("/api/grupos/:id", autenticar, async (req, res) => {
   } catch (error) {
     console.error("❌ Erro ao excluir grupo:", error.message);
     res.status(500).json({ erro: "Erro ao excluir grupo." });
+  }
+});
+
+/* ================= BLOQUEIO ENTRE USUÁRIOS ================= */
+
+app.post("/usuarios/:id/bloquear", autenticar, async (req, res) => {
+  const alvoId = parseId(req.params.id);
+  if (!alvoId) return res.status(400).json({ erro: "Usuário inválido." });
+  try {
+    const result = await blockService.toggleBlock(req.usuario.id, alvoId);
+    if (result.status === "self") return res.status(400).json({ erro: "Você não pode bloquear a si mesmo." });
+    if (result.status === "not_found") return res.status(404).json({ erro: "Usuário não encontrado." });
+    return res.json({
+      bloqueado: result.bloqueado,
+      mensagem: result.bloqueado
+        ? "Usuário bloqueado. Vocês não verão mais as publicações um do outro."
+        : "Usuário desbloqueado.",
+    });
+  } catch (error) {
+    console.error("Erro ao bloquear usuário:", error.message);
+    return res.status(500).json({ erro: "Erro ao atualizar bloqueio." });
+  }
+});
+
+app.get("/bloqueios", autenticar, async (req, res) => {
+  try {
+    return res.json(await blockService.listBlocked(req.usuario.id));
+  } catch (error) {
+    console.error("Erro ao listar bloqueios:", error.message);
+    return res.status(500).json({ erro: "Erro ao listar bloqueios." });
+  }
+});
+
+/* ================= MODERAÇÃO (EQUIPE) ================= */
+
+app.get("/admin/denuncias", autenticar, exigirEquipe, async (req, res) => {
+  try {
+    return res.json(await moderationService.listReports({ status: req.query.status, limit: req.query.limit }));
+  } catch (error) {
+    console.error("Erro ao listar denúncias:", error.message);
+    return res.status(500).json({ erro: "Erro ao listar denúncias." });
+  }
+});
+
+app.post("/admin/denuncias/:id/resolver", autenticar, exigirEquipe, async (req, res) => {
+  const denunciaId = parseId(req.params.id);
+  if (!denunciaId) return res.status(400).json({ erro: "Denúncia inválida." });
+  try {
+    const { acao, dias, motivo } = req.body || {};
+    const result = await moderationService.resolveReport({ denunciaId, moderadorId: req.usuario.id, acao, dias, motivo });
+    const erros = {
+      invalid_action: [400, "Ação inválida."],
+      not_found: [404, "Denúncia não encontrada."],
+      already_resolved: [409, "Esta denúncia já foi resolvida."],
+      no_post: [400, "Esta denúncia não está ligada a uma publicação."],
+      no_user: [400, "Esta denúncia não está ligada a um usuário."],
+      self: [400, "Você não pode suspender a si mesmo."],
+      target_is_staff: [403, "Membros da equipe não podem ser suspensos por aqui."],
+    };
+    if (erros[result.status]) {
+      const [status, erro] = erros[result.status];
+      return res.status(status).json({ erro });
+    }
+    if (result.removedPostImage) {
+      removerArquivoArmazenado(result.removedPostImage).catch(() => console.error("Falha ao remover mídia de post moderado."));
+    }
+    const mensagens = {
+      remover_post: "Publicação removida e denúncias relacionadas resolvidas.",
+      suspender_usuario: "Usuário suspenso e desconectado de todas as sessões.",
+      arquivar: "Denúncia arquivada sem ação.",
+    };
+    return res.json({ mensagem: mensagens[acao], suspenso_ate: result.suspensoAte || null });
+  } catch (error) {
+    console.error("Erro ao resolver denúncia:", error.message);
+    return res.status(500).json({ erro: "Erro ao resolver denúncia." });
+  }
+});
+
+app.post("/admin/usuarios/:id/reativar", autenticar, exigirEquipe, async (req, res) => {
+  const usuarioId = parseId(req.params.id);
+  if (!usuarioId) return res.status(400).json({ erro: "Usuário inválido." });
+  try {
+    const ok = await moderationService.liftSuspension(usuarioId);
+    if (!ok) return res.status(404).json({ erro: "Usuário não encontrado." });
+    return res.json({ mensagem: "Suspensão removida." });
+  } catch (error) {
+    console.error("Erro ao reativar usuário:", error.message);
+    return res.status(500).json({ erro: "Erro ao reativar usuário." });
+  }
+});
+
+app.get("/admin/metricas", autenticar, exigirEquipe, async (req, res) => {
+  try {
+    return res.json(await moderationService.metrics());
+  } catch (error) {
+    console.error("Erro ao calcular métricas:", error.message);
+    return res.status(500).json({ erro: "Erro ao calcular métricas." });
   }
 });
 

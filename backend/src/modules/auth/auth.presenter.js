@@ -9,6 +9,7 @@ function presentAuthenticatedUser(user) {
     essencia_tema: user.essenciaTema,
     essencia_frase: user.essenciaFrase,
     aberto_para: user.abertoPara,
+    papel: user.papel,
   };
 }
 

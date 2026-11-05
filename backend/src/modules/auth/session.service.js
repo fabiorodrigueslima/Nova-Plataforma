@@ -38,7 +38,7 @@ async function findActiveSession(token, now = new Date()) {
   if (!token) return null;
   const session = await prisma.session.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: { usuario: { select: { id: true, nome: true, email: true } } },
+    include: { usuario: { select: { id: true, nome: true, email: true, papel: true, suspensoAte: true } } },
   });
   if (!session || session.revogadoEm || session.expiraEm <= now) return null;
   return session;

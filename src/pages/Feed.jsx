@@ -26,7 +26,8 @@ import "../styles/style.css";
 
 export default function Feed() {
     const navigate = useNavigate();
-    const { sair: encerrarSessao } = useAuth();
+    const { sair: encerrarSessao, usuario } = useAuth();
+    const ehEquipe = ["admin", "moderador"].includes(usuario?.papel);
     const [temaAtivo, setTemaAtivo] = useState("Todos");
     const [menuMobileAberto, setMenuMobileAberto] = useState(false);
     const [pedidoAbrirPostfan, setPedidoAbrirPostfan] = useState(0);
@@ -127,6 +128,11 @@ export default function Feed() {
                             <button type="button" onClick={() => navegarMobile("/ajuda")}>
                                 <FiHelpCircle /> <span>Ajuda e suporte</span>
                             </button>
+                            {ehEquipe && (
+                                <button type="button" onClick={() => navegarMobile("/moderacao")}>
+                                    <FiShield /> <span>Moderação</span>
+                                </button>
+                            )}
                         </nav>
 
                         <button className="mobile-menu-logout" type="button" onClick={sair}>

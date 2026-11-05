@@ -5,7 +5,8 @@ import { useAuth } from "../context/AuthContext";
 
 export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo, pedidoAbrirPostfan = 0 }) {
     const navigate = useNavigate();
-    const { sair: encerrarSessao } = useAuth();
+    const { sair: encerrarSessao, usuario } = useAuth();
+    const ehEquipe = ["admin", "moderador"].includes(usuario?.papel);
 
     const [mostrarConta, setMostrarConta] = useState(false);
     const [mostrarPostfan, setMostrarPostfan] = useState(false);
@@ -145,6 +146,12 @@ export default function Sidebar({ temaAtivo = "Todos", setTemaAtivo, pedidoAbrir
                     <button className="sidebar-account" onClick={() => navigate("/notificacoes")}>
                         🔔 Notificações
                     </button>
+
+                    {ehEquipe && (
+                        <button className="sidebar-account" onClick={() => navigate("/moderacao")}>
+                            🛡️ Moderação
+                        </button>
+                    )}
 
                     <div
                         className="sidebar-about"

@@ -1,6 +1,7 @@
 const prisma = require("../../lib/prisma");
 const { postFeedSelect } = require("./post.select");
 const { presentPost } = require("./post.presenter");
+const { blockedIdsFor } = require("../social/block.service");
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -35,8 +36,11 @@ async function listPosts({ viewerId, userId, tema, limit, cursor }) {
   const temaFiltro = parseTema(tema);
   const decoded = decodeCursor(cursor);
   if (cursor && !decoded) return { status: "invalid_cursor" };
+  // Posts de quem o leitor bloqueou (ou de quem bloqueou o leitor) não aparecem.
+  const bloqueados = await blockedIdsFor(viewerId);
+  if (userId && bloqueados.includes(userId)) return { status: "ok", items: [], nextCursor: null };
   const where = {
-    ...(userId ? { usuarioId: userId } : {}),
+    ...(userId ? { usuarioId: userId } : bloqueados.length ? { usuarioId: { notIn: bloqueados } } : {}),
     ...(temaFiltro ? { tema: temaFiltro } : {}),
     ...(decoded ? { OR: [{ criadoEm: { lt: decoded.criadoEm } }, { criadoEm: decoded.criadoEm, id: { lt: decoded.id } }] } : {}),
   };

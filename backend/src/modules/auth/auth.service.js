@@ -13,10 +13,12 @@ const authenticatedUserSelect = Object.freeze({
   essenciaTema: true,
   essenciaFrase: true,
   abertoPara: true,
+  papel: true,
 });
 
 const loginUserSelect = Object.freeze({
   ...authenticatedUserSelect,
+  suspensoAte: true,
   senha: true,
   googleId: true,
   provider: true,
@@ -50,6 +52,7 @@ async function findLoginUser(email) {
   if (!user) return null;
   return {
     passwordHash: user.senha,
+    suspensoAte: user.suspensoAte,
     user: presentAuthenticatedUser(user),
   };
 }

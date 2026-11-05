@@ -29,11 +29,15 @@ const usaSsl =
 const pool = new Pool({
   connectionString: databaseUrl,
   ssl: usaSsl ? { rejectUnauthorized: false } : false,
+  // O pooler do Supabase (plano gratuito) aceita poucas conexões simultâneas;
+  // o Prisma usa outras, então mantemos este pool pequeno.
+  max: Number(process.env.PG_POOL_MAX) || 5,
+  idleTimeoutMillis: 30000,
 });
 
 pool
   .query("SELECT 1")
-  .then(() => console.log("✅ PostgreSQL conectado no Render"))
-  .catch((err) => console.log("❌ Erro PostgreSQL", err));
+  .then(() => console.log("✅ PostgreSQL conectado"))
+  .catch((err) => console.error("❌ Erro PostgreSQL:", err.code || err.message));
 
 module.exports = pool;

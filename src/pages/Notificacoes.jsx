@@ -34,7 +34,8 @@ export default function Notificacoes() {
       setItems((current) => current.map((item) => item.id === notification.id ? { ...item, lidaEm: new Date().toISOString() } : item));
       setUnread((value) => Math.max(0, value - 1));
     }
-    if (notification.postId) navigate(`/feed?post=${notification.postId}`);
+    if (notification.postId && ["argumento", "convenceu"].includes(notification.tipo)) navigate(`/debate/${notification.postId}`);
+    else if (notification.postId) navigate(`/feed?post=${notification.postId}`);
   }
 
   async function readAll() {

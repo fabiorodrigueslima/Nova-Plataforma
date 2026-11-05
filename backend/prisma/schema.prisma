@@ -47,6 +47,10 @@ model Usuario {
   denunciasResolvidas Denuncia[]         @relation("DenunciaModerador")
   bloqueiosFeitos     Bloqueio[]         @relation("Bloqueador")
   bloqueiosRecebidos  Bloqueio[]         @relation("Bloqueado")
+  posicoesDebate      DebatePosicao[]
+  argumentos          DebateArgumento[]
+  votosArgumento      ArgumentoVoto[]
+  mudancasOpiniao     MudancaOpiniao[]
 
   @@map("usuarios")
 }
@@ -91,6 +95,10 @@ model Post {
   imagem            String?
   tipoArquivo       String?            @map("tipo_arquivo") @db.VarChar(50)
   nomeArquivo       String?            @map("nome_arquivo")
+  // "post" comum ou "debate" (pergunta com dois lados nomeados)
+  tipo              String             @default("post") @db.VarChar(20)
+  ladoA             String?            @map("lado_a") @db.VarChar(60)
+  ladoB             String?            @map("lado_b") @db.VarChar(60)
   criadoEm          DateTime           @default(now()) @map("criado_em") @db.Timestamp(6)
   atualizadoEm      DateTime           @default(now()) @map("atualizado_em") @db.Timestamp(6)
   usuario           Usuario            @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
@@ -99,6 +107,9 @@ model Post {
   compartilhamentos Compartilhamento[]
   denuncias         Denuncia[]
   notificacoes      Notificacao[]
+  posicoes          DebatePosicao[]
+  argumentos        DebateArgumento[]
+  mudancasOpiniao   MudancaOpiniao[]
 
   @@index([usuarioId], map: "idx_posts_usuario_id")
   @@index([criadoEm(sort: Desc)], map: "idx_posts_criado_em")
@@ -295,4 +306,68 @@ model Bloqueio {
   @@unique([bloqueadorId, bloqueadoId])
   @@index([bloqueadoId], map: "idx_bloqueios_bloqueado_id")
   @@map("bloqueios")
+}
+
+model DebatePosicao {
+  id           Int      @id @default(autoincrement())
+  postId       Int      @map("post_id")
+  usuarioId    Int      @map("usuario_id")
+  lado         String   @db.VarChar(1)
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  atualizadoEm DateTime @default(now()) @map("atualizado_em") @db.Timestamp(6)
+  post         Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  usuario      Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, usuarioId])
+  @@index([postId, lado], map: "idx_debate_posicoes_post_lado")
+  @@map("debate_posicoes")
+}
+
+model DebateArgumento {
+  id        Int              @id @default(autoincrement())
+  postId    Int              @map("post_id")
+  usuarioId Int              @map("usuario_id")
+  lado      String           @db.VarChar(1)
+  texto     String           @db.VarChar(800)
+  criadoEm  DateTime         @default(now()) @map("criado_em") @db.Timestamp(6)
+  post      Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  usuario   Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  votos     ArgumentoVoto[]
+  mudancas  MudancaOpiniao[]
+
+  @@index([postId, lado], map: "idx_debate_argumentos_post_lado")
+  @@index([usuarioId], map: "idx_debate_argumentos_usuario_id")
+  @@map("debate_argumentos")
+}
+
+model ArgumentoVoto {
+  id          Int             @id @default(autoincrement())
+  argumentoId Int             @map("argumento_id")
+  usuarioId   Int             @map("usuario_id")
+  criadoEm    DateTime        @default(now()) @map("criado_em") @db.Timestamp(6)
+  argumento   DebateArgumento @relation(fields: [argumentoId], references: [id], onDelete: Cascade)
+  usuario     Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([argumentoId, usuarioId])
+  @@index([usuarioId], map: "idx_argumento_votos_usuario_id")
+  @@map("argumento_votos")
+}
+
+// Registro de cada troca de lado — e, se a pessoa quiser, qual argumento a convenceu.
+model MudancaOpiniao {
+  id          Int              @id @default(autoincrement())
+  postId      Int              @map("post_id")
+  usuarioId   Int              @map("usuario_id")
+  de          String           @db.VarChar(1)
+  para        String           @db.VarChar(1)
+  argumentoId Int?             @map("argumento_id")
+  criadoEm    DateTime         @default(now()) @map("criado_em") @db.Timestamp(6)
+  post        Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  usuario     Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  argumento   DebateArgumento? @relation(fields: [argumentoId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioId], map: "idx_mudancas_opiniao_usuario_id")
+  @@index([argumentoId], map: "idx_mudancas_opiniao_argumento_id")
+  @@index([postId], map: "idx_mudancas_opiniao_post_id")
+  @@map("mudancas_opiniao")
 }

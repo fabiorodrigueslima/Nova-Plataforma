@@ -29,6 +29,7 @@ const postService = require("./src/modules/posts/post.service");
 const socialService = require("./src/modules/social/social.service");
 const blockService = require("./src/modules/social/block.service");
 const moderationService = require("./src/modules/moderation/moderation.service");
+const debateService = require("./src/modules/debates/debate.service");
 const prisma = require("./src/lib/prisma");
 
 const app = express();
@@ -915,6 +916,16 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
   try {
     const { conteudo, tema, sentimento } = req.body;
     const texto = String(conteudo || "").trim();
+    const ehDebate = req.body.tipo === "debate";
+    let lados = { ladoA: null, ladoB: null };
+    if (ehDebate) {
+      const validacao = debateService.validateNewDebate({ pergunta: texto, ladoA: req.body.lado_a, ladoB: req.body.lado_b });
+      if (!validacao.ok) {
+        if (req.file?.filename) await removerArquivoArmazenado(`/uploads/${req.file.filename}`).catch(() => {});
+        return res.status(400).json({ erro: validacao.erro });
+      }
+      lados = { ladoA: validacao.ladoA, ladoB: validacao.ladoB };
+    }
     if (texto.length > MAX_TEXTO_POST) {
       return res.status(400).json({ erro: `A publicação pode ter no máximo ${MAX_TEXTO_POST} caracteres.` });
     }
@@ -934,11 +945,11 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
       });
     }
 
-    if (bloquearSeNecessario(texto, res)) {
+    if (bloquearSeNecessario(`${texto} ${lados.ladoA || ""} ${lados.ladoB || ""}`, res)) {
       await removerArquivoArmazenado(imagem);
       return;
     }
-    const post = await postService.createPost({ usuarioId: req.usuario.id, conteudo: texto, tema: tema || "Geral", sentimento: sentimento || "", imagem, tipoArquivo, nomeArquivo }, req.usuario.id);
+    const post = await postService.createPost({ usuarioId: req.usuario.id, conteudo: texto, tema: tema || "Geral", sentimento: sentimento || "", imagem, tipoArquivo, nomeArquivo, tipo: ehDebate ? "debate" : "post", ...lados }, req.usuario.id);
 
     res.status(201).json({
       mensagem: "Post criado com sucesso!",
@@ -1480,7 +1491,7 @@ app.get("/perfil/stats/:id", autenticar, async (req, res) => {
       [id, req.usuario.id],
     );
 
-    res.json(stats.rows[0]);
+    res.json({ ...stats.rows[0], ...(await debateService.userStats(id)) });
   } catch (error) {
     console.error("❌ Erro ao buscar estatísticas:", error.message);
     res.status(500).json({ erro: "Erro ao buscar estatísticas." });
@@ -2153,6 +2164,95 @@ app.delete("/api/grupos/:id", autenticar, async (req, res) => {
   } catch (error) {
     console.error("❌ Erro ao excluir grupo:", error.message);
     res.status(500).json({ erro: "Erro ao excluir grupo." });
+  }
+});
+
+/* ================= DEBATE ESTRUTURADO ================= */
+
+app.get("/debates/:id", autenticar, async (req, res) => {
+  const postId = parseId(req.params.id);
+  if (!postId) return res.status(400).json({ erro: "Debate inválido." });
+  try {
+    const post = await postService.getPost(postId, req.usuario.id);
+    if (!post || post.tipo !== "debate" || (await blockService.isBlockedEitherWay(req.usuario.id, post.usuario_id))) {
+      return res.status(404).json({ erro: "Debate não encontrado." });
+    }
+    return res.json({ post, argumentos: await debateService.listArguments(postId, req.usuario.id) });
+  } catch (error) {
+    console.error("Erro ao abrir debate:", error.message);
+    return res.status(500).json({ erro: "Erro ao abrir debate." });
+  }
+});
+
+app.post("/debates/:id/posicao", autenticar, async (req, res) => {
+  const postId = parseId(req.params.id);
+  if (!postId) return res.status(400).json({ erro: "Debate inválido." });
+  const argumentoId = req.body?.argumento_id ? parseId(req.body.argumento_id) : null;
+  if (req.body?.argumento_id && !argumentoId) return res.status(400).json({ erro: "Argumento inválido." });
+  try {
+    const result = await debateService.choosePosition({ postId, usuarioId: req.usuario.id, lado: req.body?.lado, argumentoId, notify: socialService.notify });
+    if (result.status === "invalid_side") return res.status(400).json({ erro: "Escolha um dos lados do debate." });
+    if (result.status === "not_found") return res.status(404).json({ erro: "Debate não encontrado." });
+    if (result.status === "invalid_argument") return res.status(400).json({ erro: "Esse argumento não pode ser indicado como o que convenceu você." });
+    const post = await postService.getPost(postId, req.usuario.id);
+    return res.json({ mudou: result.mudou, debate: post.debate });
+  } catch (error) {
+    console.error("Erro ao registrar posição:", error.message);
+    return res.status(500).json({ erro: "Erro ao registrar sua posição." });
+  }
+});
+
+app.post("/debates/:id/argumentos", autenticar, async (req, res) => {
+  const postId = parseId(req.params.id);
+  if (!postId) return res.status(400).json({ erro: "Debate inválido." });
+  const texto = String(req.body?.texto || "").trim();
+  if (texto && bloquearSeNecessario(texto, res)) return;
+  try {
+    const result = await debateService.createArgument({ postId, usuarioId: req.usuario.id, texto, notify: socialService.notify });
+    const erros = {
+      not_found: [404, "Debate não encontrado."],
+      blocked: [403, "Você não pode participar deste debate."],
+      no_position: [409, "Escolha um lado antes de argumentar."],
+      empty: [400, "Escreva o seu argumento."],
+      too_long: [400, `O argumento pode ter no máximo ${debateService.MAX_ARGUMENTO} caracteres.`],
+    };
+    if (erros[result.status]) {
+      const [status, erro] = erros[result.status];
+      return res.status(status).json({ erro });
+    }
+    return res.status(201).json({ mensagem: "Argumento publicado.", argumentos: await debateService.listArguments(postId, req.usuario.id) });
+  } catch (error) {
+    console.error("Erro ao publicar argumento:", error.message);
+    return res.status(500).json({ erro: "Erro ao publicar argumento." });
+  }
+});
+
+app.post("/argumentos/:id/voto", autenticar, async (req, res) => {
+  const argumentoId = parseId(req.params.id);
+  if (!argumentoId) return res.status(400).json({ erro: "Argumento inválido." });
+  try {
+    const result = await debateService.toggleVote({ argumentoId, usuarioId: req.usuario.id });
+    if (result.status === "not_found") return res.status(404).json({ erro: "Argumento não encontrado." });
+    if (result.status === "own") return res.status(400).json({ erro: "Você não pode avaliar o próprio argumento." });
+    if (result.status === "blocked") return res.status(403).json({ erro: "Você não pode avaliar este argumento." });
+    return res.json({ votei: result.votei });
+  } catch (error) {
+    console.error("Erro ao avaliar argumento:", error.message);
+    return res.status(500).json({ erro: "Erro ao avaliar argumento." });
+  }
+});
+
+app.delete("/argumentos/:id", autenticar, async (req, res) => {
+  const argumentoId = parseId(req.params.id);
+  if (!argumentoId) return res.status(400).json({ erro: "Argumento inválido." });
+  try {
+    const result = await debateService.deleteArgument({ argumentoId, usuarioId: req.usuario.id, isStaff: moderationService.isStaff(req.usuario.papel) });
+    if (result.status === "not_found") return res.status(404).json({ erro: "Argumento não encontrado." });
+    if (result.status === "forbidden") return res.status(403).json({ erro: "Você só pode apagar seus próprios argumentos." });
+    return res.json({ mensagem: "Argumento apagado." });
+  } catch (error) {
+    console.error("Erro ao apagar argumento:", error.message);
+    return res.status(500).json({ erro: "Erro ao apagar argumento." });
   }
 });
 

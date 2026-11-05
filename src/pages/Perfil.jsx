@@ -730,6 +730,26 @@ export default function Perfil() {
                             </div>
                         </div>
 
+                        {(stats.mudou_de_opiniao > 0 || stats.pessoas_convencidas > 0 || stats.votos_recebidos > 0) && (
+                            <ul className="perfil-selos" aria-label="Selos de debate">
+                                {stats.pessoas_convencidas > 0 && (
+                                    <li className="selo-convenceu" title="Argumentos que fizeram outras pessoas mudarem de opinião">
+                                        💡 Convenceu {stats.pessoas_convencidas} {stats.pessoas_convencidas === 1 ? "pessoa" : "pessoas"}
+                                    </li>
+                                )}
+                                {stats.mudou_de_opiniao > 0 && (
+                                    <li className="selo-mudou" title="Mudou de lado em debates diante de bons argumentos">
+                                        🔄 Mudou de opinião {stats.mudou_de_opiniao} {stats.mudou_de_opiniao === 1 ? "vez" : "vezes"}
+                                    </li>
+                                )}
+                                {stats.votos_recebidos > 0 && (
+                                    <li className="selo-votos" title="Avaliações de 'bom argumento' recebidas">
+                                        👍 {stats.votos_recebidos} {stats.votos_recebidos === 1 ? "avaliação de bom argumento" : "avaliações de bom argumento"}
+                                    </li>
+                                )}
+                            </ul>
+                        )}
+
                         <p className="perfil-bio-pro">
                             {perfil.bio || "Este usuário ainda não adicionou uma bio."}
                         </p>

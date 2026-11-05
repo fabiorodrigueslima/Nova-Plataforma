@@ -19,6 +19,7 @@ import { analisarConteudo } from "../utils/moderacao";
 import { useNotification } from "../context/notificationStore";
 import { useAuth } from "../context/AuthContext";
 import { resolverUrlMidia } from "../utils/mediaUrl";
+import DebatePlacar from "./DebatePlacar";
 import "../styles/style.css";
 
 function Avatar({ className = "post-avatar", foto, nome, onClick }) {
@@ -63,6 +64,9 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
     const [publicando, setPublicando] = useState(false);
     const [avisoModeracao, setAvisoModeracao] = useState("");
     const [avisoPublicacao, setAvisoPublicacao] = useState("");
+    const [modoDebate, setModoDebate] = useState(false);
+    const [ladoA, setLadoA] = useState("");
+    const [ladoB, setLadoB] = useState("");
 
     // Evita que a resposta de um tema antigo sobrescreva o tema escolhido depois.
     const requisicaoFeed = useRef(0);
@@ -142,6 +146,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
     }
 
     async function publicar() {
+        if (modoDebate && !texto.trim()) {
+            setAvisoPublicacao("Escreva a pergunta ou tese que você quer colocar em debate.");
+            return;
+        }
+
         if (!texto.trim() && !arquivo) {
             const primeiroNome = usuario?.nome?.split(" ")?.[0] || "Olá";
             setAvisoPublicacao(
@@ -150,7 +159,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             return;
         }
 
-        if (!validarTexto(texto, true)) return;
+        if (!validarTexto(`${texto} ${modoDebate ? `${ladoA} ${ladoB}` : ""}`, true)) return;
 
         try {
             setPublicando(true);
@@ -161,6 +170,11 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             formData.append("conteudo", texto.trim());
             formData.append("tema", tema);
             formData.append("sentimento", sentimento);
+            if (modoDebate) {
+                formData.append("tipo", "debate");
+                formData.append("lado_a", ladoA.trim() || "A favor");
+                formData.append("lado_b", ladoB.trim() || "Contra");
+            }
 
             if (arquivo) formData.append("imagem", arquivo);
 
@@ -171,6 +185,9 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             setTexto("");
             setTema("Geral");
             setSentimento("");
+            setModoDebate(false);
+            setLadoA("");
+            setLadoB("");
             removerArquivo();
         } catch (error) {
             console.error("Erro ao publicar:", error);
@@ -181,6 +198,24 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
             });
         } finally {
             setPublicando(false);
+        }
+    }
+
+    async function escolherLadoNoFeed(post, lado) {
+        // Trocar de lado acontece na página do debate, onde a pessoa conta o que a convenceu.
+        if (post.debate?.minha_posicao) {
+            navigate(`/debate/${post.id}`);
+            return;
+        }
+        try {
+            const res = await api.post(`/debates/${post.id}/posicao`, { lado });
+            setPosts((prev) => prev.map((item) => (item.id === post.id ? { ...item, debate: res.data.debate } : item)));
+        } catch (error) {
+            dialog.notify({
+                type: "danger",
+                title: "Não foi possível registrar seu lado",
+                message: error.response?.data?.erro || "Tente novamente.",
+            });
         }
     }
 
@@ -357,11 +392,21 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
     return (
         <section className="feed-center">
             <div className="post-box">
+                <div className="composer-modos" role="tablist" aria-label="Tipo de publicação">
+                    <button type="button" role="tab" aria-selected={!modoDebate} className={!modoDebate ? "ativo" : ""} onClick={() => setModoDebate(false)}>
+                        📝 Publicação
+                    </button>
+                    <button type="button" role="tab" aria-selected={modoDebate} className={modoDebate ? "ativo" : ""} onClick={() => setModoDebate(true)}>
+                        ⚖️ Abrir um debate
+                    </button>
+                </div>
+
                 <div className="post-user">
                     <Avatar foto={usuario?.foto} nome={usuario?.nome} />
 
                     <textarea
-                        placeholder="No que você está pensando?"
+                        maxLength={modoDebate ? 300 : undefined}
+                        placeholder={modoDebate ? "Qual pergunta ou tese você quer colocar em debate? Ex.: O home office deve ser o padrão?" : "No que você está pensando?"}
                         value={texto}
                         onChange={(e) => {
                             setTexto(e.target.value);
@@ -370,6 +415,20 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
                         }}
                     />
                 </div>
+
+                {modoDebate && (
+                    <div className="composer-lados">
+                        <label>
+                            <span>Lado 1</span>
+                            <input value={ladoA} maxLength={60} onChange={(e) => setLadoA(e.target.value)} placeholder="A favor" />
+                        </label>
+                        <span className="composer-vs" aria-hidden="true">vs</span>
+                        <label>
+                            <span>Lado 2</span>
+                            <input value={ladoB} maxLength={60} onChange={(e) => setLadoB(e.target.value)} placeholder="Contra" />
+                        </label>
+                    </div>
+                )}
 
                 <div className="safety-note">
                     <strong>Convivência segura</strong>
@@ -519,6 +578,17 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
                                 {post.tema && <span className="post-theme">#{post.tema}</span>}
                                 {post.sentimento && <span className="post-feeling">Está se sentindo {post.sentimento}</span>}
 
+                                {post.tipo === "debate" && editandoId !== post.id && (
+                                    <div className="feed-debate">
+                                        <span className="debate-selo">⚖️ Debate</span>
+                                        <h3>{textoPost}</h3>
+                                        <DebatePlacar post={post} onEscolher={(lado) => escolherLadoNoFeed(post, lado)} />
+                                        <button type="button" className="debate-abrir" onClick={() => navigate(`/debate/${post.id}`)}>
+                                            Ver argumentos ({post.debate?.total_argumentos || 0}) →
+                                        </button>
+                                    </div>
+                                )}
+
                                 {editandoId === post.id ? (
                                     <div className="edit-box">
                                         <textarea value={textoEditado} onChange={(e) => setTextoEditado(e.target.value)} />
@@ -528,7 +598,7 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
                                         </div>
                                     </div>
                                 ) : (
-                                    textoPost && <p>{textoPost}</p>
+                                    post.tipo !== "debate" && textoPost && <p>{textoPost}</p>
                                 )}
 
                                 {imagemPost && (

@@ -116,4 +116,4 @@ async function listNotifications(destinatarioId, limit = 30) {
   return { items, unread };
 }
 
-module.exports = { createComment, deleteComment, listComments, listNotifications, parsePositiveId, share, toggleFollow, toggleLike, updateComment };
+module.exports = { notify, createComment, deleteComment, listComments, listNotifications, parsePositiveId, share, toggleFollow, toggleLike, updateComment };

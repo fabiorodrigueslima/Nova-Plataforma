@@ -2,6 +2,7 @@ const prisma = require("../../lib/prisma");
 const { postFeedSelect } = require("./post.select");
 const { presentPost } = require("./post.presenter");
 const { blockedIdsFor } = require("../social/block.service");
+const { enrichDebates } = require("../debates/debate.service");
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
@@ -50,17 +51,18 @@ async function listPosts({ viewerId, userId, tema, limit, cursor }) {
   });
   const hasMore = rows.length > take;
   const page = hasMore ? rows.slice(0, take) : rows;
-  return { status: "ok", items: page.map(presentPost), nextCursor: hasMore ? encodeCursor(page.at(-1)) : null };
+  const items = await enrichDebates(page.map(presentPost), viewerId);
+  return { status: "ok", items, nextCursor: hasMore ? encodeCursor(page.at(-1)) : null };
 }
 
 async function createPost(data, viewerId) {
   const post = await prisma.post.create({ data, select: postFeedSelect(viewerId) });
-  return presentPost(post);
+  return (await enrichDebates([presentPost(post)], viewerId))[0];
 }
 
 async function getPost(id, viewerId) {
   const post = await prisma.post.findUnique({ where: { id }, select: postFeedSelect(viewerId) });
-  return post ? presentPost(post) : null;
+  return post ? (await enrichDebates([presentPost(post)], viewerId))[0] : null;
 }
 
 async function findOwned(id, usuarioId) {
@@ -72,7 +74,7 @@ async function findOwned(id, usuarioId) {
 
 async function updatePost(id, data, viewerId) {
   const post = await prisma.post.update({ where: { id }, data: { ...data, atualizadoEm: new Date() }, select: postFeedSelect(viewerId) });
-  return presentPost(post);
+  return (await enrichDebates([presentPost(post)], viewerId))[0];
 }
 
 async function deletePost(id) { return prisma.post.delete({ where: { id }, select: { id: true } }); }

@@ -6,6 +6,10 @@ assertTestDatabase("Conexao dos testes", process.env.DATABASE_URL);
 const testPool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: false });
 
 const DOMAIN_TABLES = [
+  "mudancas_opiniao",
+  "argumento_votos",
+  "debate_argumentos",
+  "debate_posicoes",
   "bloqueios",
   "sessoes",
   "notificacoes",

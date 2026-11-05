@@ -874,7 +874,7 @@ app.post("/upload", autenticar, upload.single("imagem"), async (req, res) => {
 /* ================= LISTAR POSTS ================= */
 app.get("/posts", autenticar, async (req, res) => {
   try {
-    const page = await postService.listPosts({ viewerId: req.usuario.id, limit: req.query.limit, cursor: req.query.cursor });
+    const page = await postService.listPosts({ viewerId: req.usuario.id, tema: req.query.tema, limit: req.query.limit, cursor: req.query.cursor });
     if (page.status === "invalid_cursor") return res.status(400).json({ erro: "Cursor inválido." });
     res.json({ items: page.items, nextCursor: page.nextCursor });
   } catch (error) {

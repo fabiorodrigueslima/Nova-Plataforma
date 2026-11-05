@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     FiAlertCircle,
     FiEdit2,
@@ -64,24 +64,33 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
     const [avisoModeracao, setAvisoModeracao] = useState("");
     const [avisoPublicacao, setAvisoPublicacao] = useState("");
 
+    // Evita que a resposta de um tema antigo sobrescreva o tema escolhido depois.
+    const requisicaoFeed = useRef(0);
+    const paramsTema = temaAtivo === "Todos" ? {} : { tema: temaAtivo };
+
     async function carregarPosts() {
+        const requisicao = ++requisicaoFeed.current;
         try {
             setLoadingPosts(true);
-            const res = await api.get("/posts");
+            setNextCursor(null);
+            const res = await api.get("/posts", { params: paramsTema });
+            if (requisicao !== requisicaoFeed.current) return;
             setPosts(Array.isArray(res.data.items) ? res.data.items : []);
             setNextCursor(res.data.nextCursor || null);
         } catch (error) {
             console.error("Erro ao carregar posts:", error);
         } finally {
-            setLoadingPosts(false);
+            if (requisicao === requisicaoFeed.current) setLoadingPosts(false);
         }
     }
 
     async function carregarMaisPosts() {
         if (!nextCursor || carregandoMais) return;
+        const requisicao = requisicaoFeed.current;
         try {
             setCarregandoMais(true);
-            const res = await api.get("/posts", { params: { cursor: nextCursor } });
+            const res = await api.get("/posts", { params: { ...paramsTema, cursor: nextCursor } });
+            if (requisicao !== requisicaoFeed.current) return;
             const novos = Array.isArray(res.data.items) ? res.data.items : [];
             setPosts((atuais) => {
                 const ids = new Set(atuais.map((post) => post.id));
@@ -93,7 +102,8 @@ export default function FeedCenter({ temaAtivo = "Todos", posts = [], setPosts }
 
     useEffect(() => {
         carregarPosts();
-    }, []);
+        // Recarrega o feed a cada troca de tema (o filtro é aplicado no servidor).
+    }, [temaAtivo]);
 
     function selecionarArquivo(e) {
         const file = e.target.files[0];

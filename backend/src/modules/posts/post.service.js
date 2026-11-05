@@ -25,12 +25,19 @@ function decodeCursor(value) {
   } catch { return null; }
 }
 
-async function listPosts({ viewerId, userId, limit, cursor }) {
+function parseTema(value) {
+  const tema = String(value || "").trim().slice(0, 100);
+  return tema && tema !== "Todos" ? tema : null;
+}
+
+async function listPosts({ viewerId, userId, tema, limit, cursor }) {
   const take = parseLimit(limit);
+  const temaFiltro = parseTema(tema);
   const decoded = decodeCursor(cursor);
   if (cursor && !decoded) return { status: "invalid_cursor" };
   const where = {
     ...(userId ? { usuarioId: userId } : {}),
+    ...(temaFiltro ? { tema: temaFiltro } : {}),
     ...(decoded ? { OR: [{ criadoEm: { lt: decoded.criadoEm } }, { criadoEm: decoded.criadoEm, id: { lt: decoded.id } }] } : {}),
   };
   const rows = await prisma.post.findMany({

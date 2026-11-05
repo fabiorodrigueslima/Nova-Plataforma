@@ -30,6 +30,28 @@ describe("posts e feed migrados para Prisma", () => {
     await request(app).delete(`/posts/${response.body.post.id}`).set(await authHeader(user)).expect(200);
   });
 
+  it("filtra o feed por tema no servidor, inclusive em páginas seguintes", async () => {
+    const user = await createTestUser();
+    const base = Date.now();
+    // 3 posts de Política mais antigos, cobertos por 5 posts mais novos de outro tema.
+    for (let i = 0; i < 3; i += 1) {
+      await prisma.post.create({ data: { usuarioId: user.id, conteudo: `Politica ${i}`, tema: "Política", criadoEm: new Date(base - (10 - i) * 1000) } });
+    }
+    for (let i = 0; i < 5; i += 1) {
+      await prisma.post.create({ data: { usuarioId: user.id, conteudo: `Esporte ${i}`, tema: "Esporte", criadoEm: new Date(base - i * 1000) } });
+    }
+    const headers = await authHeader(user);
+    const first = await request(app).get("/posts").query({ tema: "Política", limit: 2 }).set(headers).expect(200);
+    expect(first.body.items.map((p) => p.tema)).toEqual(["Política", "Política"]);
+    expect(first.body.nextCursor).toBeTruthy();
+    const second = await request(app).get("/posts").query({ tema: "Política", limit: 2, cursor: first.body.nextCursor }).set(headers).expect(200);
+    expect(second.body.items).toHaveLength(1);
+    expect(second.body.items[0].tema).toBe("Política");
+    expect(second.body.nextCursor).toBeNull();
+    const todos = await request(app).get("/posts").query({ tema: "Todos" }).set(headers).expect(200);
+    expect(todos.body.items).toHaveLength(8);
+  });
+
   it.each(["", "     "])("rejeita texto vazio sem mídia: %j", async (conteudo) => {
     const user = await createTestUser();
     await request(app).post("/posts").set(await authHeader(user)).send({ conteudo }).expect(400);

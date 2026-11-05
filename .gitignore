@@ -32,3 +32,7 @@ backend/.env.test
 backend/uploads/
 
 .env.mobile
+
+# Cópias locais de credenciais de teste (o exemplo continua versionado)
+backend/.env.test*
+!backend/.env.test.example

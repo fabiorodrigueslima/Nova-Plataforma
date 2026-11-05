@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FiBell } from "react-icons/fi";
 import api from "../services/api";
 import { formatarData } from "../utils/FormatarData";
 import { resolverUrlMidia } from "../utils/mediaUrl";
@@ -46,17 +47,30 @@ export default function Notificacoes() {
   return (
     <main className="notifications-page">
       <section className="notifications-card">
+        <button className="explorar-voltar" onClick={() => navigate("/feed")}>← Voltar</button>
         <header className="notifications-header">
-          <div><button className="explorar-voltar" onClick={() => navigate("/feed")}>← Voltar</button><h1>Notificações</h1><p>{unread ? `${unread} não lida${unread === 1 ? "" : "s"}` : "Você está em dia."}</p></div>
+          <div className="notifications-title">
+            <span className="notifications-title-icon" aria-hidden="true"><FiBell /></span>
+            <div>
+              <h1>Notificações</h1>
+              <p>{unread ? `${unread} não lida${unread === 1 ? "" : "s"}` : "Você está em dia."}</p>
+            </div>
+          </div>
           {unread > 0 && <button className="notifications-read-all" onClick={readAll}>Marcar todas como lidas</button>}
         </header>
-        {loading && <p className="explorar-vazio">Carregando notificações...</p>}
+        {loading && <p className="notifications-loading">Carregando notificações...</p>}
         {error && <div className="notifications-error" role="alert">{error}<button onClick={load}>Tentar novamente</button></div>}
-        {!loading && !error && items.length === 0 && <p className="explorar-vazio">Suas interações aparecerão aqui.</p>}
+        {!loading && !error && items.length === 0 && (
+          <div className="notifications-empty">
+            <span className="notifications-empty-icon" aria-hidden="true"><FiBell /></span>
+            <strong>Nenhuma notificação ainda</strong>
+            <p>Curtidas, comentários e novos seguidores vão aparecer aqui.</p>
+          </div>
+        )}
         <div className="notifications-list">
           {items.map((item) => <button key={item.id} className={`notification-item ${item.lidaEm ? "" : "unread"}`} onClick={() => read(item)}>
             <span className="notification-avatar">{item.ator?.foto ? <img src={resolverUrlMidia(item.ator.foto)} alt="" /> : item.ator?.nome?.charAt(0) || "P"}</span>
-            <span><strong>{item.ator?.nome || "Usuário removido"}</strong> {item.mensagem}<small>{formatarData(item.criadoEm)}</small></span>
+            <span className="notification-text"><strong>{item.ator?.nome || "Usuário removido"}</strong> {item.mensagem}<small>{formatarData(item.criadoEm)}</small></span>
           </button>)}
         </div>
       </section>

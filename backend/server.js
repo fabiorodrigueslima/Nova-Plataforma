@@ -113,9 +113,35 @@ app.use(
   }),
 );
 
+// No Render há exatamente um proxy na frente do app; sem isso o rate limit
+// enxerga o IP do proxy e trata todos os usuários como um só.
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
+const GOOGLE_GSI = "https://accounts.google.com/gsi/";
+
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
+    // O popup do Google Identity Services precisa se comunicar com a janela de origem.
+    crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+    contentSecurityPolicy: {
+      directives: {
+        "script-src": ["'self'", `${GOOGLE_GSI}client`],
+        "frame-src": ["'self'", GOOGLE_GSI],
+        "connect-src": ["'self'", GOOGLE_GSI],
+        "style-src": ["'self'", "https:", "'unsafe-inline'"],
+        "img-src": [
+          "'self'",
+          "data:",
+          "blob:",
+          "https://res.cloudinary.com",
+          "https://*.googleusercontent.com",
+        ],
+        "media-src": ["'self'", "blob:", "https://res.cloudinary.com"],
+      },
+    },
   }),
 );
 
@@ -143,12 +169,33 @@ const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: process.env.NODE_ENV === "test" ? 100 : 12,
   skipSuccessfulRequests: true,
+  // O login inválido responde 200 com autenticado:false; marcamos a falha
+  // explicitamente para que ela conte no limite de tentativas.
+  requestWasSuccessful: (req, res) => res.statusCode < 400 && !res.locals.authFailed,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ erro: "Muitas tentativas. Aguarde alguns minutos e tente novamente." }),
 });
 
 app.use(["/login", "/auth/google", "/recuperar", "/resetar"], authLimiter);
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: process.env.NODE_ENV === "test" ? 100 : 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ erro: "Muitos cadastros a partir desta rede. Tente novamente mais tarde." }),
+});
+
+app.use("/cadastro", signupLimiter);
+
+const MAX_TEXTO_POST = 5000;
+const MAX_TEXTO_MENSAGEM = 2000;
+
+function parseId(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
 
 app.get("/healthz", (req, res) => {
   res.json({ status: "ok" });
@@ -298,8 +345,15 @@ pool
 
 /* ================= FUNÇÕES ================= */
 
+const ALFABETO_CONVITE = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
 function gerarCodigoGrupo() {
-  return Math.random().toString(36).substring(2, 8).toUpperCase();
+  // Código criptograficamente aleatório (8 caracteres, sem 0/O/1/I ambíguos).
+  let codigo = "";
+  for (let i = 0; i < 8; i += 1) {
+    codigo += ALFABETO_CONVITE[crypto.randomInt(ALFABETO_CONVITE.length)];
+  }
+  return codigo;
 }
 
 function obterFrontendUrl(req) {
@@ -368,6 +422,16 @@ function clearSessionCookie(res) {
   res.clearCookie(SESSION_COOKIE_NAME, cookieOptions(new Date(0)));
 }
 
+// Grava ultimo_acesso no máximo uma vez por minuto por usuário, em vez de a cada requisição.
+const ultimoAcessoGravado = new Map();
+function registrarAcesso(usuarioId) {
+  const agora = Date.now();
+  if (agora - (ultimoAcessoGravado.get(usuarioId) || 0) < 60 * 1000) return;
+  ultimoAcessoGravado.set(usuarioId, agora);
+  if (ultimoAcessoGravado.size > 50000) ultimoAcessoGravado.clear();
+  userService.touchLastAccess(usuarioId).catch(() => {});
+}
+
 async function autenticar(req, res, next) {
   try {
     const token = readCookie(req, SESSION_COOKIE_NAME);
@@ -385,7 +449,7 @@ async function autenticar(req, res, next) {
     req.usuario = session.usuario;
     req.session = session;
     req.sessionToken = token;
-    userService.touchLastAccess(session.usuarioId).catch(() => {});
+    registrarAcesso(session.usuarioId);
     return next();
   } catch {
     return res.status(401).json({ erro: "Sessão inválida ou expirada." });
@@ -478,6 +542,7 @@ app.post("/login", async (req, res) => {
     const usuario = await authService.findLoginUser(emailNormalizado);
 
     if (!usuario) {
+      res.locals.authFailed = true;
       return res.json({
         autenticado: false,
         erro: "Email ou senha inválidos.",
@@ -494,6 +559,7 @@ app.post("/login", async (req, res) => {
     const senhaCorreta = await bcrypt.compare(senha, usuario.passwordHash);
 
     if (!senhaCorreta) {
+      res.locals.authFailed = true;
       return res.json({
         autenticado: false,
         erro: "Email ou senha inválidos.",
@@ -814,6 +880,9 @@ app.post("/posts", autenticar, upload.single("imagem"), async (req, res) => {
   try {
     const { conteudo, tema, sentimento } = req.body;
     const texto = String(conteudo || "").trim();
+    if (texto.length > MAX_TEXTO_POST) {
+      return res.status(400).json({ erro: `A publicação pode ter no máximo ${MAX_TEXTO_POST} caracteres.` });
+    }
     let tipoArquivo = null;
     let nomeArquivo = null;
 
@@ -868,6 +937,9 @@ app.put("/posts/:id", autenticar, async (req, res) => {
     }
 
     const texto = conteudo === undefined ? owned.post.conteudo : String(conteudo).trim();
+    if (texto && texto.length > MAX_TEXTO_POST) {
+      return res.status(400).json({ erro: `A publicação pode ter no máximo ${MAX_TEXTO_POST} caracteres.` });
+    }
     if (!texto && !owned.post.imagem) return res.status(400).json({ erro: "O post precisa de texto ou mídia." });
     if (conteudo !== undefined && bloquearSeNecessario(texto, res)) {
       return;
@@ -951,6 +1023,10 @@ app.post("/comentarios", autenticar, async (req, res) => {
       return res.status(400).json({
         erro: "post_id e conteudo são obrigatórios.",
       });
+    }
+
+    if (texto.length > MAX_TEXTO_MENSAGEM) {
+      return res.status(400).json({ erro: `O comentário pode ter no máximo ${MAX_TEXTO_MENSAGEM} caracteres.` });
     }
 
     if (bloquearSeNecessario(texto, res)) {
@@ -1174,8 +1250,12 @@ app.get("/posts/:id", autenticar, async (req, res) => {
 app.post("/mensagens", autenticar, async (req, res) => {
   try {
     const { destinatario_id, mensagem } = req.body;
-    const destinatarioId = Number(destinatario_id);
-    const textoMensagem = mensagem?.trim();
+    const destinatarioId = parseId(destinatario_id);
+    const textoMensagem = String(mensagem || "").trim();
+
+    if (textoMensagem.length > MAX_TEXTO_MENSAGEM) {
+      return res.status(400).json({ erro: `A mensagem pode ter no máximo ${MAX_TEXTO_MENSAGEM} caracteres.` });
+    }
 
     if (!destinatarioId || !textoMensagem) {
       return res.status(400).json({
@@ -1222,7 +1302,7 @@ app.post("/mensagens", autenticar, async (req, res) => {
 
 app.get("/mensagens/:usuarioId", autenticar, async (req, res) => {
   try {
-    const outroUsuarioId = Number(req.params.usuarioId);
+    const outroUsuarioId = parseId(req.params.usuarioId);
 
     if (!outroUsuarioId) {
       return res.status(400).json({ erro: "Usuário inválido." });
@@ -1238,22 +1318,25 @@ app.get("/mensagens/:usuarioId", autenticar, async (req, res) => {
 
     const mensagens = await pool.query(
       `
-      SELECT
-        mp.*,
-        remetente.nome AS remetente_nome,
-        remetente.foto AS remetente_foto,
-        destinatario.nome AS destinatario_nome,
-        destinatario.foto AS destinatario_foto
-      FROM mensagens_privadas mp
-      JOIN usuarios remetente ON remetente.id = mp.remetente_id
-      JOIN usuarios destinatario ON destinatario.id = mp.destinatario_id
-      WHERE (
-        mp.remetente_id = $1 AND mp.destinatario_id = $2
-      ) OR (
-        mp.remetente_id = $2 AND mp.destinatario_id = $1
-      )
-      ORDER BY mp.criado_em ASC
-      LIMIT 100
+      SELECT * FROM (
+        SELECT
+          mp.*,
+          remetente.nome AS remetente_nome,
+          remetente.foto AS remetente_foto,
+          destinatario.nome AS destinatario_nome,
+          destinatario.foto AS destinatario_foto
+        FROM mensagens_privadas mp
+        JOIN usuarios remetente ON remetente.id = mp.remetente_id
+        JOIN usuarios destinatario ON destinatario.id = mp.destinatario_id
+        WHERE (
+          mp.remetente_id = $1 AND mp.destinatario_id = $2
+        ) OR (
+          mp.remetente_id = $2 AND mp.destinatario_id = $1
+        )
+        ORDER BY mp.criado_em DESC, mp.id DESC
+        LIMIT 100
+      ) ultimas
+      ORDER BY ultimas.criado_em ASC, ultimas.id ASC
       `,
       [req.usuario.id, outroUsuarioId],
     );
@@ -1262,7 +1345,7 @@ app.get("/mensagens/:usuarioId", autenticar, async (req, res) => {
       `
       UPDATE mensagens_privadas
       SET lida = true
-      WHERE remetente_id = $1 AND destinatario_id = $2
+      WHERE remetente_id = $1 AND destinatario_id = $2 AND lida = false
       `,
       [outroUsuarioId, req.usuario.id],
     );
@@ -1331,9 +1414,10 @@ app.get("/usuarios/seguindo", autenticar, async (req, res) => {
 
 app.get("/usuarios/:id", autenticar, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ erro: "Usuário inválido." });
 
-    const usuario = await userService.findPublicProfile(Number(id));
+    const usuario = await userService.findPublicProfile(id);
 
     if (!usuario) {
       return res.status(404).json({ erro: "Usuário não encontrado." });
@@ -1349,7 +1433,8 @@ app.get("/usuarios/:id", autenticar, async (req, res) => {
 
 app.get("/perfil/stats/:id", autenticar, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ erro: "Usuário inválido." });
 
     const stats = await pool.query(
       `
@@ -1509,65 +1594,46 @@ app.post("/api/grupos", autenticar, async (req, res) => {
       return;
     }
 
-    let codigo = gerarCodigoGrupo();
+    const nomeGrupo = String(nome).trim().slice(0, 150);
+    const descricaoGrupo = String(descricao).trim().slice(0, 1000);
+    const categoriaGrupo = String(categoria || "Geral").trim().slice(0, 100) || "Geral";
 
-    let codigoExiste = await pool.query(
-      "SELECT id FROM grupos WHERE codigo_convite = $1",
-      [codigo],
-    );
+    const client = await pool.connect();
+    let novoGrupo;
+    try {
+      await client.query("BEGIN");
+      // Código aleatório de 8 caracteres; em caso raríssimo de colisão, tenta de novo.
+      for (let tentativa = 0; tentativa < 5 && !novoGrupo; tentativa += 1) {
+        const grupo = await client.query(
+          `
+          INSERT INTO grupos (
+            dono_id, nome, descricao, categoria, codigo_convite, tipo, teste_expira_em, acesso_pago
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6::VARCHAR,
+            CASE WHEN $6::VARCHAR = 'reservada' THEN NOW() + INTERVAL '7 days' ELSE NULL END,
+            false
+          )
+          ON CONFLICT (codigo_convite) DO NOTHING
+          RETURNING *
+          `,
+          [req.usuario.id, nomeGrupo, descricaoGrupo, categoriaGrupo, gerarCodigoGrupo(), tipoGrupo],
+        );
+        novoGrupo = grupo.rows[0];
+      }
+      if (!novoGrupo) throw new Error("Não foi possível gerar código de convite.");
 
-    while (codigoExiste.rows.length > 0) {
-      codigo = gerarCodigoGrupo();
-
-      codigoExiste = await pool.query(
-        "SELECT id FROM grupos WHERE codigo_convite = $1",
-        [codigo],
+      await client.query(
+        "INSERT INTO grupo_membros (grupo_id, usuario_id, papel) VALUES ($1, $2, 'admin')",
+        [novoGrupo.id, req.usuario.id],
       );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const grupo = await pool.query(
-      `
-      INSERT INTO grupos (
-        dono_id,
-        nome,
-        descricao,
-        categoria,
-        codigo_convite,
-        tipo,
-        teste_expira_em,
-        acesso_pago
-      )
-      VALUES (
-        $1,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6::VARCHAR,
-        CASE WHEN $6::VARCHAR = 'reservada' THEN NOW() + INTERVAL '7 days' ELSE NULL END,
-        false
-      )
-      RETURNING *
-      `,
-      [
-        req.usuario.id,
-        nome,
-        descricao,
-        categoria || "Geral",
-        codigo,
-        tipoGrupo,
-      ],
-    );
-
-    const novoGrupo = grupo.rows[0];
-
-    await pool.query(
-      `
-      INSERT INTO grupo_membros (grupo_id, usuario_id, papel)
-      VALUES ($1, $2, $3)
-      `,
-      [novoGrupo.id, req.usuario.id, "admin"],
-    );
 
     res.status(201).json({
       mensagem: "Grupo criado com sucesso!",
@@ -1664,7 +1730,8 @@ app.get("/api/grupos", autenticar, async (req, res) => {
 
 app.post("/api/grupos/:id/solicitar", autenticar, async (req, res) => {
   try {
-    const grupoId = Number(req.params.id);
+    const grupoId = parseId(req.params.id);
+    if (!grupoId) return res.status(400).json({ erro: "Grupo inválido." });
 
     const grupo = await pool.query("SELECT * FROM grupos WHERE id = $1", [
       grupoId,
@@ -1710,7 +1777,8 @@ app.post("/api/grupos/:id/solicitar", autenticar, async (req, res) => {
 
 app.get("/api/grupos/:id/solicitacoes", autenticar, async (req, res) => {
   try {
-    const grupoId = Number(req.params.id);
+    const grupoId = parseId(req.params.id);
+    if (!grupoId) return res.status(400).json({ erro: "Grupo inválido." });
 
     const grupo = await pool.query("SELECT * FROM grupos WHERE id = $1", [
       grupoId,
@@ -1746,8 +1814,10 @@ app.get("/api/grupos/:id/solicitacoes", autenticar, async (req, res) => {
 
 app.post("/api/grupos/:id/solicitacoes/:solicitacaoId", autenticar, async (req, res) => {
   try {
-    const grupoId = Number(req.params.id);
-    const solicitacaoId = Number(req.params.solicitacaoId);
+    const grupoId = parseId(req.params.id);
+    if (!grupoId) return res.status(400).json({ erro: "Grupo inválido." });
+    const solicitacaoId = parseId(req.params.solicitacaoId);
+    if (!solicitacaoId) return res.status(400).json({ erro: "Solicitação inválida." });
     const { acao } = req.body;
 
     if (!["aprovar", "recusar"].includes(acao)) {
@@ -1816,7 +1886,7 @@ app.post("/api/grupos/:id/solicitacoes/:solicitacaoId", autenticar, async (req, 
 
 app.post("/api/grupos/entrar", autenticar, async (req, res) => {
   try {
-    const { codigo } = req.body;
+    const codigo = String(req.body.codigo || "").trim();
 
     if (!codigo) {
       return res.status(400).json({ erro: "Digite o código do grupo." });
@@ -1886,7 +1956,8 @@ app.post("/api/grupos/entrar", autenticar, async (req, res) => {
 
 app.get("/api/grupos/:id", autenticar, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ erro: "Grupo inválido." });
 
     const grupo = await pool.query(
       `
@@ -1930,7 +2001,8 @@ app.get("/api/grupos/:id", autenticar, async (req, res) => {
 
 app.get("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ erro: "Grupo inválido." });
 
     const membro = await pool.query(
       `
@@ -1948,14 +2020,18 @@ app.get("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
 
     const mensagens = await pool.query(
       `
-      SELECT 
-        gm.*,
-        u.nome,
-        u.foto
-      FROM grupo_mensagens gm
-      JOIN usuarios u ON u.id = gm.usuario_id
-      WHERE gm.grupo_id = $1
-      ORDER BY gm.criado_em ASC
+      SELECT * FROM (
+        SELECT
+          gm.*,
+          u.nome,
+          u.foto
+        FROM grupo_mensagens gm
+        JOIN usuarios u ON u.id = gm.usuario_id
+        WHERE gm.grupo_id = $1
+        ORDER BY gm.criado_em DESC, gm.id DESC
+        LIMIT 200
+      ) ultimas
+      ORDER BY ultimas.criado_em ASC, ultimas.id ASC
       `,
       [id],
     );
@@ -1970,11 +2046,16 @@ app.get("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
 
 app.post("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { mensagem } = req.body;
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ erro: "Grupo inválido." });
+    const mensagem = String(req.body.mensagem || "").trim();
 
     if (!mensagem) {
       return res.status(400).json({ erro: "Digite uma mensagem." });
+    }
+
+    if (mensagem.length > MAX_TEXTO_MENSAGEM) {
+      return res.status(400).json({ erro: `A mensagem pode ter no máximo ${MAX_TEXTO_MENSAGEM} caracteres.` });
     }
 
     if (bloquearSeNecessario(mensagem, res)) {
@@ -2017,7 +2098,8 @@ app.post("/api/grupos/:id/mensagens", autenticar, async (req, res) => {
 
 app.delete("/api/grupos/:id", autenticar, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = parseId(req.params.id);
+    if (!id) return res.status(400).json({ erro: "Grupo inválido." });
 
     const grupo = await pool.query("SELECT * FROM grupos WHERE id = $1", [id]);
 
